@@ -22,7 +22,7 @@ interface FinanceContextType {
   transactions: Transaction[];
   budgets: Budget[];
   addTransaction: (data: Partial<Transaction> & { installments?: number }) => void;
-  transferFunds: (data: { fromWalletId: string, toWalletId: string, amount: number, date: string, description: string }) => void;
+  transferFunds: (data: { fromWalletId: string, toWalletId: string, amount: number, date: string, dueDate?: string, description: string }) => void;
   updateTransaction: (id: string, data: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
   payTransaction: (id: string, paidAmount?: number) => void;
@@ -60,6 +60,13 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         const savedTransactions = localStorage.getItem('finantech_transactions');
         const savedBudgets = localStorage.getItem('finantech_budgets');
 
+        const parsedAttributions = savedAttributions ? JSON.parse(savedAttributions) : INITIAL_ATTRIBUTIONS;
+        
+        // Migrate "Josi" to "Grasi" if found in attributions
+        const migratedAttributions = (parsedAttributions as Attribution[]).map(a => 
+          a.name === 'Josi' ? { ...a, name: 'Grasi' } : a
+        );
+
         const parsedTransactions = savedTransactions ? JSON.parse(savedTransactions) : [];
         // Migrate legacy transactions
         const migratedTransactions = parsedTransactions.map((t: any) => ({
@@ -70,7 +77,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
         setWalletsState(savedWallets ? JSON.parse(savedWallets) : INITIAL_WALLETS);
         setCategories(savedCategories ? JSON.parse(savedCategories) : INITIAL_CATEGORIES);
-        setAttributions(savedAttributions ? JSON.parse(savedAttributions) : INITIAL_ATTRIBUTIONS);
+        setAttributions(migratedAttributions);
         setTransactions(migratedTransactions);
         setBudgets(savedBudgets ? JSON.parse(savedBudgets) : []);
       } catch (e) {
@@ -128,7 +135,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   const addTransaction = useCallback((data: any) => {
     try {
-      const { type, installments = 1, amount = 0, date = new Date().toISOString(), ...rest } = data;
+      const { type, installments = 1, amount = 0, date = new Date().toISOString(), dueDate, ...rest } = data;
       const newTransactions: Transaction[] = [];
       const groupId = installments > 1 ? uuidv4() : undefined;
 
@@ -140,6 +147,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
             nature: rest.nature || 'EXPENSE',
             amount: amount,
             date: addMonths(new Date(date), i).toISOString(),
+            dueDate: dueDate ? addMonths(new Date(dueDate), i).toISOString() : undefined,
             isPaid: false,
             groupId,
             installmentNumber: i + 1,
@@ -154,6 +162,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
           nature: rest.nature || 'EXPENSE',
           amount,
           date,
+          dueDate,
           isPaid: rest.isPaid || false,
           ...rest
         });
@@ -165,9 +174,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const transferFunds = useCallback((data: { fromWalletId: string, toWalletId: string, amount: number, date: string, description: string }) => {
+  const transferFunds = useCallback((data: { fromWalletId: string, toWalletId: string, amount: number, date: string, dueDate?: string, description: string }) => {
     try {
-      const { fromWalletId, toWalletId, amount, date, description } = data;
+      const { fromWalletId, toWalletId, amount, date, dueDate, description } = data;
       const transferId = uuidv4();
 
       const debitTransaction: Transaction = {
@@ -178,6 +187,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         description,
         amount,
         date: new Date(date).toISOString(),
+        dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
         isPaid: true,
         type: 'SINGLE',
         nature: 'TRANSFER_OUT',
@@ -192,6 +202,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         description,
         amount,
         date: new Date(date).toISOString(),
+        dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
         isPaid: true,
         type: 'SINGLE',
         nature: 'TRANSFER_IN',

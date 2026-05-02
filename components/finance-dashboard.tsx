@@ -53,8 +53,10 @@ const TransactionItem = ({ transaction, onPay, onClick }: { transaction: any, on
         </div>
         <div>
           <h4 className="font-semibold text-slate-100">{transaction.description}</h4>
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <span>{formatDate(transaction.date)}</span>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
+            <span className="font-bold text-slate-300">Venc: {formatDate(transaction.dueDate || transaction.date)}</span>
+            <span>•</span>
+            <span>Evento: {formatDate(transaction.date)}</span>
             <span>•</span>
             <span className="flex items-center gap-1">
               <WalletIcon size={12} /> {wallet?.name}
@@ -141,9 +143,10 @@ const TransactionItem = ({ transaction, onPay, onClick }: { transaction: any, on
 };
 
 export default function FinanceDashboard() {
-  const { wallets, transactions, budgets, categories, addTransaction, payTransaction, deleteTransaction, updateWallet, updateBudget } = useFinance();
-  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'wallets' | 'categories' | 'budgets' | 'reports' | 'management'>('overview');
+  const { wallets, transactions, budgets, categories, attributions, addTransaction, payTransaction, deleteTransaction, updateWallet, updateBudget } = useFinance();
+  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'wallets' | 'categories' | 'budgets' | 'reports' | 'management' | 'attributions' | 'installments'>('overview');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
   const [showWalletForm, setShowWalletForm] = useState(false);
   const [selectedWallet, setSelectedWallet] = useState<any>(null);
@@ -165,21 +168,29 @@ export default function FinanceDashboard() {
 
   // Filter States
   const [filterMonth, setFilterMonth] = useState<string>(format(new Date(), 'yyyy-MM'));
+  const [filterEventMonth, setFilterEventMonth] = useState<string>('ALL');
   const [filterWallet, setFilterWallet] = useState('ALL');
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [mgmtSortBy, setMgmtSortBy] = useState<'name' | 'budget' | 'realized'>('name');
+  const [mgmtFilterAttribution, setMgmtFilterAttribution] = useState('ALL');
+  const [mgmtFilterWallet, setMgmtFilterWallet] = useState('ALL');
   const [hideTransfers, setHideTransfers] = useState(true);
 
   // Filtering Logic
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
       try {
-        const tDate = new Date(t.date);
-        if (isNaN(tDate.getTime())) return false;
+        const primaryDate = t.dueDate ? new Date(t.dueDate) : new Date(t.date);
+        const eventDate = new Date(t.date);
         
-        const tMonth = format(tDate, 'yyyy-MM');
+        if (isNaN(primaryDate.getTime())) return false;
+        
+        const tMonth = format(primaryDate, 'yyyy-MM');
+        const eMonth = format(eventDate, 'yyyy-MM');
+        
         const matchesMonth = filterMonth === 'ALL' || tMonth === filterMonth;
+        const matchesEventMonth = filterEventMonth === 'ALL' || eMonth === filterEventMonth;
         const matchesWallet = filterWallet === 'ALL' || t.walletId === filterWallet;
         const matchesCategory = filterCategory === 'ALL' || t.categoryId === filterCategory;
         const matchesSearch = !searchTerm || t.description.toLowerCase().includes(searchTerm.toLowerCase());
@@ -187,17 +198,17 @@ export default function FinanceDashboard() {
         const isTransfer = t.nature === 'TRANSFER' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER_IN';
         const matchesHideTransfers = !hideTransfers || !isTransfer;
         
-        return matchesMonth && matchesWallet && matchesCategory && matchesSearch && matchesHideTransfers;
+        return matchesMonth && matchesEventMonth && matchesWallet && matchesCategory && matchesSearch && matchesHideTransfers;
       } catch (e) {
         console.error('Error filtering transaction:', e);
         return false;
       }
     }).sort((a, b) => {
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
+      const dateA = new Date(a.dueDate || a.date).getTime();
+      const dateB = new Date(b.dueDate || b.date).getTime();
       return dateB - dateA;
     });
-  }, [transactions, filterMonth, filterWallet, filterCategory, searchTerm, hideTransfers]);
+  }, [transactions, filterMonth, filterEventMonth, filterWallet, filterCategory, searchTerm, hideTransfers]);
 
   // Totalizer for Filtered Transactions
   const filteredMetrics = useMemo(() => {
@@ -222,8 +233,8 @@ export default function FinanceDashboard() {
       
       const monthTransactions = transactions.filter(t => {
         try {
-          const tDate = new Date(t.date);
-          return isWithinInterval(tDate, { start, end });
+          const checkDate = t.dueDate ? new Date(t.dueDate) : new Date(t.date);
+          return isWithinInterval(checkDate, { start, end });
         } catch (e) {
           return false;
         }
@@ -285,7 +296,8 @@ export default function FinanceDashboard() {
     { id: 'transactions', label: 'Transações', icon: <Calendar size={20} /> },
     { id: 'wallets', label: 'Carteiras', icon: <CreditCard size={20} /> },
     { id: 'categories', label: 'Categorias', icon: <Plus size={20} /> },
-    { id: 'budgets', label: 'Orçamentos', icon: <TrendingDown size={20} /> },
+    { id: 'budgets', label: 'Metas', icon: <TrendingDown size={20} /> },
+    { id: 'installments', label: 'Parcelamentos', icon: <Banknote size={20} /> },
     { id: 'attributions', label: 'Atribuições', icon: <User size={20} /> },
     { id: 'management', label: 'Gestão de Categorias', icon: <Search size={20} /> },
     { id: 'reports', label: 'Relatórios', icon: <TrendingUp size={20} /> },
@@ -373,7 +385,7 @@ export default function FinanceDashboard() {
                       <h2 className="text-2xl font-black tracking-tight text-slate-100">Gestão de Categorias</h2>
                       <p className="text-slate-500 text-sm font-bold">Consolidado de transações e planejamento mensal</p>
                     </div>
-                    <div className="flex items-center gap-2 bg-slate-800/40 p-1 rounded-2xl border border-slate-800">
+                    <div className="flex flex-wrap items-center gap-2 bg-slate-800/40 p-1 rounded-2xl border border-slate-800">
                        <div className="flex items-center gap-1 px-2 border-r border-slate-700">
                         <button 
                           onClick={() => setMgmtSortBy('name')}
@@ -386,7 +398,7 @@ export default function FinanceDashboard() {
                         <button 
                           onClick={() => setMgmtSortBy('budget')}
                           className={`p-1.5 rounded-lg transition-all ${mgmtSortBy === 'budget' ? 'bg-slate-700 text-blue-400' : 'text-slate-500 hover:text-slate-300'}`}
-                          title="Ordenar por Orçamento"
+                          title="Ordenar por Meta"
                         >
                           <span className="text-[10px] font-black tracking-tighter block md:hidden">ORÇ.</span>
                           <span className="hidden md:block"><TrendingDown size={14} /></span>
@@ -400,8 +412,38 @@ export default function FinanceDashboard() {
                           <span className="hidden md:block"><TrendingUp size={14} /></span>
                         </button>
                       </div>
+
+                       <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/50 border border-slate-700/50">
+                        <User size={14} className="text-amber-500" />
+                        <select 
+                          value={mgmtFilterAttribution}
+                          onChange={e => setMgmtFilterAttribution(e.target.value)}
+                          className="text-xs font-bold outline-none bg-transparent text-slate-200"
+                        >
+                          <option value="ALL">Todas Atrob.</option>
+                          {attributions.map(attr => (
+                            <option key={attr.id} value={attr.id}>{attr.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/50 border border-slate-700/50">
+                        <WalletIcon size={14} className="text-emerald-500" />
+                        <select 
+                          value={mgmtFilterWallet}
+                          onChange={e => setMgmtFilterWallet(e.target.value)}
+                          className="text-xs font-bold outline-none bg-transparent text-slate-200"
+                        >
+                          <option value="ALL">Todas Kart.</option>
+                          {wallets.map(w => (
+                            <option key={w.id} value={w.id}>{w.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/50 border border-slate-700/50">
                         <Calendar size={16} className="text-blue-400" />
+                        <span className="text-[10px] font-bold text-slate-500 uppercase mr-1">Venc.</span>
                         <input 
                           type="month" 
                           value={currentMonth}
@@ -418,7 +460,7 @@ export default function FinanceDashboard() {
                       <Card className="p-6 border-none bg-gradient-to-br from-slate-800/50 to-slate-900/50">
                         <div className="flex items-center justify-between mb-8">
                           <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                             <PieChart size={16} className="text-blue-400" /> Comparativo Orçamentário
+                             <PieChart size={16} className="text-blue-400" /> Comparativo de Metas
                           </h3>
                         </div>
                         <div className="space-y-6">
@@ -426,19 +468,41 @@ export default function FinanceDashboard() {
                             const mgmtCategories = categories
                               .filter(cat => {
                                 const isBudgeted = !cat.excludeFromBudget;
-                                const spent = metrics.monthTransactions
-                                  .filter(t => t.categoryId === cat.id && (t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature))
+                                const spent = transactions
+                                  .filter(t => {
+                                    const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.date);
+                                    const tMonth = format(tDate, 'yyyy-MM');
+                                    const matchesMonth = tMonth === currentMonth;
+                                    const matchesAttribution = mgmtFilterAttribution === 'ALL' || t.attributionId === mgmtFilterAttribution;
+                                    const matchesWallet = mgmtFilterWallet === 'ALL' || t.walletId === mgmtFilterWallet;
+                                    const isExpenseNature = t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature;
+                                    return t.categoryId === cat.id && matchesMonth && matchesAttribution && matchesWallet && isExpenseNature;
+                                  })
                                   .reduce((acc, t) => acc + t.amount, 0);
                                 return isBudgeted || spent > 0;
                               })
                               .map(cat => {
                                 const budget = budgets.find(b => b.categoryId === cat.id && b.month === currentMonth)?.amount || 0;
-                                const spent = metrics.monthTransactions
-                                  .filter(t => t.categoryId === cat.id && (t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature))
+                                const spent = transactions
+                                  .filter(t => {
+                                    const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.date);
+                                    const tMonth = format(tDate, 'yyyy-MM');
+                                    const matchesMonth = tMonth === currentMonth;
+                                    const matchesAttribution = mgmtFilterAttribution === 'ALL' || t.attributionId === mgmtFilterAttribution;
+                                    const matchesWallet = mgmtFilterWallet === 'ALL' || t.walletId === mgmtFilterWallet;
+                                    const isExpenseNature = t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature;
+                                    return t.categoryId === cat.id && matchesMonth && matchesAttribution && matchesWallet && isExpenseNature;
+                                  })
                                   .reduce((acc, t) => acc + t.amount, 0);
                                 return { ...cat, budget, spent };
                               })
                               .sort((a, b) => {
+                                // Always prioritize those with budget presence
+                                const aHasBudget = a.budget > 0;
+                                const bHasBudget = b.budget > 0;
+                                if (aHasBudget && !bHasBudget) return -1;
+                                if (!aHasBudget && bHasBudget) return 1;
+
                                 if (mgmtSortBy === 'name') return a.name.localeCompare(b.name);
                                 if (mgmtSortBy === 'budget') return b.budget - a.budget;
                                 if (mgmtSortBy === 'realized') return b.spent - a.spent;
@@ -471,15 +535,9 @@ export default function FinanceDashboard() {
                                           </div>
                                           <div className="text-right">
                                             <span className={`text-xs md:text-lg font-black block ${isOverBudget ? 'text-rose-400' : 'text-slate-100'}`}>
-                                              {cat.budget > 0 ? (
+                                              {cat.budget > 0 && (
                                                 <>
                                                   <span className="text-slate-400">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cat.budget)}</span>
-                                                  <span className="text-slate-500 mx-1">/</span>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <span className="text-slate-500 mr-2 italic md:not-italic">(S/ Orç.)</span>
-                                                  <span className="text-slate-400">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cat.spent)}</span>
                                                   <span className="text-slate-500 mx-1">/</span>
                                                 </>
                                               )}
@@ -487,7 +545,7 @@ export default function FinanceDashboard() {
                                             </span>
                                           </div>
                                         </div>
-                                        {(cat.budget > 0 || cat.spent > 0) && (
+                                        {cat.budget > 0 && (
                                           <div className="mt-4 pr-14">
                                             <div className="relative h-2 md:h-3.5 bg-slate-800/50 rounded-full shadow-inner">
                                               <motion.div 
@@ -575,6 +633,161 @@ export default function FinanceDashboard() {
                         <MoreVertical size={16} className="text-slate-600" />
                       </Card>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'installments' && (
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h2 className="text-2xl font-bold tracking-tight text-slate-100">Gestão de Parcelamentos</h2>
+                      <p className="text-slate-400 text-sm font-bold">Acompanhe todos os seus compromissos parcelados</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4">
+                    {(() => {
+                      const installmentGroups = transactions
+                        .filter(t => t.type === 'INSTALLMENT' && t.groupId)
+                        .reduce((acc: any, t) => {
+                          if (!acc[t.groupId!]) {
+                            acc[t.groupId!] = {
+                              id: t.groupId,
+                              description: t.description,
+                              totalAmount: 0,
+                              paidAmount: 0,
+                              count: 0,
+                              paidCount: 0,
+                              items: [],
+                              walletId: t.walletId,
+                              categoryId: t.categoryId,
+                              nature: t.nature
+                            };
+                          }
+                          acc[t.groupId!].totalAmount += t.amount;
+                          acc[t.groupId!].count += 1;
+                          if (t.isPaid) {
+                            acc[t.groupId!].paidAmount += t.amount;
+                            acc[t.groupId!].paidCount += 1;
+                          }
+                          acc[t.groupId!].items.push(t);
+                          return acc;
+                        }, {});
+
+                      const groups = Object.values(installmentGroups).sort((a: any, b: any) => {
+                        const dateA = new Date(a.items[0].date).getTime();
+                        const dateB = new Date(b.items[0].date).getTime();
+                        return dateB - dateA;
+                      });
+
+                      if (groups.length === 0) {
+                        return (
+                          <div className="text-center py-20 bg-slate-800/10 rounded-3xl border border-dashed border-slate-800">
+                            <Banknote size={48} className="mx-auto text-slate-700 mb-4" />
+                            <p className="text-slate-500 font-bold">Nenhum parcelamento encontrado.</p>
+                          </div>
+                        );
+                      }
+
+                      return groups.map((group: any) => {
+                        const category = categories.find(c => c.id === group.categoryId);
+                        const percent = Math.round((group.paidCount / group.count) * 100);
+                        
+                        return (
+                          <Card key={group.id} className="p-0 overflow-hidden">
+                            <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-lg" style={{ backgroundColor: category?.color || '#3b82f6' }}>
+                                    <Calendar size={24} />
+                                  </div>
+                                  <div>
+                                    <h3 className="text-lg font-black text-slate-100">{group.description}</h3>
+                                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400 mt-1">
+                                      <span className="uppercase tracking-wider">{category?.name || 'Outros'}</span>
+                                      <span>•</span>
+                                      <span className="text-blue-400">{group.paidCount} de {group.count} parcelas</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-between md:justify-end gap-4 md:gap-8">
+                                  <div className="text-right">
+                                    <span className="text-[10px] font-black text-slate-500 uppercase block mb-1">Total Compromisso</span>
+                                    <span className="text-base md:text-xl font-black text-slate-100">{formatCurrency(group.totalAmount)}</span>
+                                  </div>
+                                  <div className="text-right border-l border-slate-800 pl-4">
+                                    <span className="text-[10px] font-black text-emerald-500 uppercase block mb-1">Total Pago</span>
+                                    <span className="text-sm md:text-base font-bold text-emerald-400">{formatCurrency(group.paidAmount)}</span>
+                                  </div>
+                                  <div className="text-right border-l border-slate-800 pl-4">
+                                    <span className="text-[10px] font-black text-rose-500 uppercase block mb-1">Pendente</span>
+                                    <span className="text-sm md:text-base font-bold text-rose-400">{formatCurrency(group.totalAmount - group.paidAmount)}</span>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-2 pr-2">
+                                     <div className={`text-xs font-black px-3 py-1 rounded-full uppercase tracking-widest ${group.paidCount === group.count ? 'bg-emerald-500/10 text-emerald-400' : 'bg-blue-500/10 text-blue-400'}`}>
+                                        {percent}%
+                                     </div>
+                                  </div>
+                                </div>
+                            </div>
+                            
+                            <div className="px-5 pb-5">
+                                <div className="relative h-2 bg-slate-800 rounded-full overflow-hidden shadow-inner mb-4">
+                                  <motion.div 
+                                    className="absolute top-0 left-0 h-full bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${percent}%` }}
+                                    transition={{ duration: 1 }}
+                                  />
+                                </div>
+
+                                <div className="bg-[#0f172a]/50 rounded-2xl overflow-hidden border border-slate-800/50">
+                                   <div className="max-h-[300px] overflow-y-auto custom-scrollbar divide-y divide-slate-800/30">
+                                      {group.items
+                                        .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                                        .map((item: any) => (
+                                        <div 
+                                          key={item.id} 
+                                          className="flex items-center justify-between p-4 hover:bg-slate-800/40 transition-colors"
+                                          onClick={() => {
+                                            setSelectedTransaction(item);
+                                            setShowAddForm(true);
+                                          }}
+                                        >
+                                          <div className="flex items-center gap-3">
+                                            <span className="text-xs font-black text-slate-500 w-8">{item.installmentNumber}/{item.totalInstallments}</span>
+                                            <div>
+                                              <span className="text-sm font-bold text-slate-300 block">Vencimento: {formatDate(item.dueDate || item.date)}</span>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-4">
+                                            <span className="text-sm font-black text-slate-100">{formatCurrency(item.amount)}</span>
+                                            {item.isPaid ? (
+                                              <span className="text-[10px] font-black uppercase text-emerald-500 flex items-center gap-1 bg-emerald-500/10 px-2 py-1 rounded-lg">
+                                                <CheckCircle size={10} /> Pago
+                                              </span>
+                                            ) : (
+                                              <button 
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  payTransaction(item.id);
+                                                }}
+                                                className="text-[10px] font-black uppercase text-blue-400 bg-blue-500/10 px-2 py-1 rounded-lg hover:bg-blue-500/20 transition-colors"
+                                              >
+                                                Pagar
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                   </div>
+                                </div>
+                            </div>
+                          </Card>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               )}
@@ -688,7 +901,7 @@ export default function FinanceDashboard() {
                       </section>
 
                       <section>
-                        <h2 className="text-lg font-bold mb-4">Orçado vs Realizado</h2>
+                        <h2 className="text-lg font-bold mb-4">Meta vs Realizado</h2>
                         <Card className="p-6">
                           <div className="h-[300px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
@@ -779,29 +992,49 @@ export default function FinanceDashboard() {
                           className="w-full bg-[#1e293b] border-slate-800 rounded-xl pl-10 pr-4 py-2 text-sm focus:ring-1 focus:ring-blue-500 outline-none"
                         />
                       </div>
+                      
                       <div className="flex items-center gap-2 bg-[#1e293b] border border-slate-800 px-3 py-2 rounded-xl">
-                        <Filter size={16} className="text-slate-500" />
+                        <span className="text-[10px] font-bold text-blue-400 uppercase">Venc.</span>
                         <select 
                           value={filterMonth}
                           onChange={e => setFilterMonth(e.target.value)}
                           className="bg-transparent text-sm font-semibold outline-none text-slate-300"
                         >
                           <option value="ALL">Todo Período</option>
+                          {Array.from(new Set(transactions.map(t => format(parseISO(t.dueDate || t.date), 'yyyy-MM'))))
+                            .sort((a, b) => b.localeCompare(a))
+                            .map(m => (
+                              <option key={m} value={m}>{m}</option>
+                            ))
+                          }
+                          {!Array.from(new Set(transactions.map(t => format(parseISO(t.dueDate || t.date), 'yyyy-MM')))).includes(format(new Date(), 'yyyy-MM')) && (
+                            <option value={format(new Date(), 'yyyy-MM')}>{format(new Date(), 'yyyy-MM')}</option>
+                          )}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-2 bg-[#1e293b] border border-slate-800 px-3 py-2 rounded-xl">
+                        <span className="text-[10px] font-bold text-amber-500 uppercase">Evento</span>
+                        <select 
+                          value={filterEventMonth}
+                          onChange={e => setFilterEventMonth(e.target.value)}
+                          className="bg-transparent text-sm font-semibold outline-none text-slate-300"
+                        >
+                          <option value="ALL">Qualquer Data</option>
                           {Array.from(new Set(transactions.map(t => format(parseISO(t.date), 'yyyy-MM'))))
                             .sort((a, b) => b.localeCompare(a))
                             .map(m => (
                               <option key={m} value={m}>{m}</option>
                             ))
                           }
-                          {!Array.from(new Set(transactions.map(t => format(parseISO(t.date), 'yyyy-MM')))).includes(format(new Date(), 'yyyy-MM')) && (
-                            <option value={format(new Date(), 'yyyy-MM')}>{format(new Date(), 'yyyy-MM')}</option>
-                          )}
                         </select>
                       </div>
-                      {(filterMonth !== format(new Date(), 'yyyy-MM') || filterWallet !== 'ALL' || filterCategory !== 'ALL' || searchTerm || hideTransfers) && (
+
+                      {(filterMonth !== format(new Date(), 'yyyy-MM') || filterEventMonth !== 'ALL' || filterWallet !== 'ALL' || filterCategory !== 'ALL' || searchTerm || hideTransfers) && (
                         <button 
                           onClick={() => {
                             setFilterMonth(format(new Date(), 'yyyy-MM'));
+                            setFilterEventMonth('ALL');
                             setFilterWallet('ALL');
                             setFilterCategory('ALL');
                             setSearchTerm('');
@@ -1033,12 +1266,12 @@ export default function FinanceDashboard() {
               {activeTab === 'budgets' && (
                 <div className="space-y-6">
                   <div className="flex justify-between items-center">
-                    <h2 className="text-2xl font-bold tracking-tight text-slate-100">Planejamento de Orçamento</h2>
+                    <h2 className="text-2xl font-bold tracking-tight text-slate-100">Planejamento de Metas</h2>
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => setShowCopyBudgetModal(true)}
                         className="bg-slate-800 text-slate-300 px-3 py-1.5 rounded-xl text-sm font-bold hover:bg-slate-700 transition-all flex items-center gap-2 border border-slate-700"
-                        title="Copiar orçamento para outros meses"
+                        title="Copiar metas para outros meses"
                       >
                          <CreditCard size={16} /> Copiar
                       </button>
@@ -1151,7 +1384,7 @@ export default function FinanceDashboard() {
         {showAddForm && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAddForm(false)} />
-            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-lg bg-[#1e293b] rounded-3xl shadow-2xl overflow-hidden">
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-3xl bg-[#1e293b] rounded-3xl shadow-2xl overflow-hidden">
               <TransactionForm transaction={selectedTransaction} onClose={() => setShowAddForm(false)} />
             </motion.div>
           </div>
@@ -1190,6 +1423,8 @@ export default function FinanceDashboard() {
                 month={currentMonth} 
                 transactions={transactions}
                 wallets={wallets}
+                attributionId={activeTab === 'management' ? mgmtFilterAttribution : 'ALL'}
+                walletId={activeTab === 'management' ? mgmtFilterWallet : 'ALL'}
                 onEdit={(t) => {
                   setSelectedTransaction(t);
                   setShowAddForm(true);
@@ -1223,6 +1458,59 @@ export default function FinanceDashboard() {
           </div>
         )}
       </AnimatePresence>
+      {/* Mobile Bottom Navigation */}
+      <div className="md:hidden fixed bottom-6 left-4 right-4 z-50">
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+              className="absolute bottom-full mb-4 left-0 right-0 bg-[#1e293b]/95 backdrop-blur-md border border-slate-700/50 rounded-3xl p-4 shadow-2xl space-y-1"
+            >
+              <div className="grid grid-cols-2 gap-2">
+                {navItems.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id as any);
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${
+                      activeTab === item.id 
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' 
+                        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                    }`}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="bg-[#1e293b]/80 backdrop-blur-lg border border-slate-700/50 rounded-3xl p-2 flex items-center justify-between shadow-xl">
+          <button 
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-black text-sm transition-all ${isMobileMenuOpen ? 'bg-slate-800 text-blue-400' : 'text-slate-300'}`}
+          >
+            {isMobileMenuOpen ? <Plus size={20} className="rotate-45" /> : <Filter size={20} />}
+            MENU
+          </button>
+          
+          <button 
+            onClick={() => {
+              setSelectedTransaction(null);
+              setShowAddForm(true);
+            }}
+            className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-2xl font-black text-sm shadow-lg shadow-blue-900/20 active:scale-95 transition-all"
+          >
+            <Plus size={20} /> NOVO
+          </button>
+        </div>
+      </div>
         </>
       )}
     </div>
@@ -1260,7 +1548,7 @@ function CopyBudgetModal({ sourceMonth, onClose }: { sourceMonth: string, onClos
     <div className="p-8 space-y-6 bg-[#1e293b] text-slate-100">
       <div className="flex justify-between items-center mb-2">
         <div>
-          <h2 className="text-xl font-bold text-slate-100">Copiar Planejamento</h2>
+          <h2 className="text-xl font-bold text-slate-100">Copiar planejamento de metas</h2>
           <p className="text-xs text-slate-400">Origem: {sourceMonth}</p>
         </div>
         <button type="button" onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400">
@@ -1375,12 +1663,32 @@ function AttributionForm({ attribution, onClose }: { attribution?: any, onClose:
   );
 }
 
-function CategoryTransactionsModal({ category, month, transactions, wallets, onEdit, onClose }: { category: any, month: string, transactions: any[], wallets: any[], onEdit: (t: any) => void, onClose: () => void }) {
+function CategoryTransactionsModal({ 
+  category, 
+  month, 
+  transactions, 
+  wallets, 
+  onEdit, 
+  onClose,
+  attributionId = 'ALL',
+  walletId = 'ALL'
+}: { 
+  category: any, 
+  month: string, 
+  transactions: any[], 
+  wallets: any[], 
+  onEdit: (t: any) => void, 
+  onClose: () => void,
+  attributionId?: string,
+  walletId?: string
+}) {
   const filtered = transactions.filter(t => 
     t.categoryId === category.id && 
-    format(new Date(t.date), 'yyyy-MM') === month &&
-    (t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature)
-  ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    format(new Date(t.dueDate || t.date), 'yyyy-MM') === month &&
+    (t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature) &&
+    (attributionId === 'ALL' || t.attributionId === attributionId) &&
+    (walletId === 'ALL' || t.walletId === walletId)
+  ).sort((a, b) => new Date(b.dueDate || b.date).getTime() - new Date(a.dueDate || a.date).getTime());
 
   return (
     <div className="p-8 space-y-6 bg-[#1e293b] text-slate-100 max-h-[90vh] flex flex-col">
@@ -1419,7 +1727,9 @@ function CategoryTransactionsModal({ category, month, transactions, wallets, onE
                      <div className="truncate">
                        <span className="text-sm font-bold block text-slate-200 truncate">{t.description}</span>
                        <div className="flex items-center gap-2 mt-0.5">
-                         <span className="text-[10px] text-slate-500 font-bold uppercase">{format(new Date(t.date), 'dd/MM/yyyy')}</span>
+                         <span className="text-[10px] text-slate-300 font-bold uppercase">Venc: {format(new Date(t.dueDate || t.date), 'dd/MM/yyyy')}</span>
+                          <span className="w-1 h-1 rounded-full bg-slate-700" />
+                          <span className="text-[10px] text-slate-500 font-bold uppercase">Ev: {format(new Date(t.date), 'dd/MM/yyyy')}</span>
                          <span className="w-1 h-1 rounded-full bg-slate-700" />
                          <span className="text-[10px] text-blue-400/70 font-bold truncate">{wallet?.name || 'Carteira'}</span>
                        </div>
@@ -1545,7 +1855,7 @@ function CategoryForm({ category, onClose }: { category?: any, onClose: () => vo
             <div className="flex items-center gap-3">
               <PieChart size={18} />
               <div className="text-left">
-                <span className="text-sm font-bold block">Desconsiderar no Orçamento</span>
+                <span className="text-sm font-bold block">Sem Meta Mensal Definida</span>
                 <span className="text-[10px] opacity-70">Esta categoria não aparecerá no planejamento</span>
               </div>
             </div>
@@ -1739,7 +2049,7 @@ function TransactionForm({ transaction, onClose }: { transaction?: any, onClose:
   const [nature, setNature] = useState<TransactionNature>(transaction?.nature || 'EXPENSE');
   const [type, setType] = useState<TransactionType>(transaction?.type || 'SINGLE');
   const [description, setDescription] = useState(transaction?.description || '');
-  const [amount, setAmount] = useState(transaction?.amount?.toString() || '');
+  const [amount, setAmount] = useState(transaction?.amount != null ? Number(transaction.amount).toFixed(2) : '');
   const [walletId, setWalletId] = useState(transaction?.walletId || (wallets.length > 0 ? wallets[0].id : ''));
   const [attributionId, setAttributionId] = useState(transaction?.attributionId || 'attr-1');
   const [destinationWalletId, setDestinationWalletId] = useState(transaction?.destinationWalletId || (wallets.length > 1 ? wallets[1].id : ''));
@@ -1753,13 +2063,24 @@ function TransactionForm({ transaction, onClose }: { transaction?: any, onClose:
         console.error('Error formatting transaction date:', e);
       }
     }
-    const defaultWallet = wallets.find(w => w.id === walletId) || wallets[0];
-    return defaultWallet?.currentDueDate || format(new Date(), 'yyyy-MM-dd');
+    return format(new Date(), 'yyyy-MM-dd');
   });
 
   const [installments, setInstallments] = useState(transaction?.totalInstallments || 1);
   const [isPaid, setIsPaid] = useState(transaction?.isPaid || false);
   const [updateWalletDueDate, setUpdateWalletDueDate] = useState(false);
+
+  const [dueDate, setDueDate] = useState(() => {
+    if (transaction?.dueDate) {
+      try {
+        return format(parseISO(transaction.dueDate), 'yyyy-MM-dd');
+      } catch (e) {
+        console.error('Error formatting transaction due date:', e);
+      }
+    }
+    const defaultWallet = wallets.find(w => w.id === walletId) || wallets[0];
+    return defaultWallet?.currentDueDate || format(new Date(), 'yyyy-MM-dd');
+  });
 
   const handleNatureChange = (newNature: TransactionNature) => {
     setNature(newNature);
@@ -1775,7 +2096,7 @@ function TransactionForm({ transaction, onClose }: { transaction?: any, onClose:
     setWalletId(id);
     const wallet = wallets.find(w => w.id === id);
     if (wallet?.currentDueDate && !transaction) {
-      setDate(wallet.currentDueDate);
+      setDueDate(wallet.currentDueDate);
     }
   };
 
@@ -1794,7 +2115,7 @@ function TransactionForm({ transaction, onClose }: { transaction?: any, onClose:
     }
 
     if (updateWalletDueDate && walletId) {
-      updateWallet(walletId, { currentDueDate: date });
+      updateWallet(walletId, { currentDueDate: dueDate });
     }
 
     const isTransferNature = nature === 'TRANSFER' || nature === 'TRANSFER_OUT' || nature === 'TRANSFER_IN';
@@ -1803,6 +2124,7 @@ function TransactionForm({ transaction, onClose }: { transaction?: any, onClose:
       const transferData = {
         amount: Number(amount),
         date: date ? new Date(date + 'T12:00:00').toISOString() : new Date().toISOString(),
+        dueDate: dueDate ? new Date(dueDate + 'T12:00:00').toISOString() : undefined,
         description
       };
 
@@ -1824,6 +2146,7 @@ function TransactionForm({ transaction, onClose }: { transaction?: any, onClose:
         description,
         amount: Number(amount),
         date: date ? new Date(date + 'T12:00:00').toISOString() : new Date().toISOString(),
+        dueDate: dueDate ? new Date(dueDate + 'T12:00:00').toISOString() : undefined,
         walletId,
         categoryId,
         attributionId,
@@ -1851,7 +2174,7 @@ function TransactionForm({ transaction, onClose }: { transaction?: any, onClose:
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-6 md:p-8 space-y-6 bg-[#1e293b] text-slate-100">
+    <form onSubmit={handleSubmit} className="p-4 md:p-8 space-y-6 bg-[#1e293b] text-slate-100 max-w-4xl mx-auto max-h-[90vh] overflow-y-auto custom-scrollbar">
       <div className="flex justify-between items-center mb-2">
         <h2 className="text-xl font-bold text-slate-100">{transaction ? 'Editar Lançamento' : 'Novo Lançamento'}</h2>
         <button type="button" onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full transition-colors text-slate-400">
@@ -1872,175 +2195,238 @@ function TransactionForm({ transaction, onClose }: { transaction?: any, onClose:
             <button
               type="button"
               onClick={() => handleNatureChange('EXPENSE')}
-              className={`p-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 ${
+              className={`p-2 rounded-xl border-2 transition-all flex flex-col items-center gap-1 ${
                 nature === 'EXPENSE' ? 'border-rose-600 bg-rose-600/10 text-rose-400' : 'border-slate-800 text-slate-500 hover:border-slate-700'
               }`}
             >
-              <TrendingDown size={18} />
-              <span className="text-[10px] font-bold uppercase">Despesa</span>
+              <TrendingDown size={16} />
+              <span className="text-[9px] font-bold uppercase">Despesa</span>
             </button>
             <button
               type="button"
               onClick={() => handleNatureChange('INCOME')}
-              className={`p-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 ${
+              className={`p-2 rounded-xl border-2 transition-all flex flex-col items-center gap-1 ${
                 nature === 'INCOME' ? 'border-emerald-600 bg-emerald-600/10 text-emerald-400' : 'border-slate-800 text-slate-500 hover:border-slate-700'
               }`}
             >
-              <TrendingUp size={18} />
-              <span className="text-[10px] font-bold uppercase">Receita</span>
+              <TrendingUp size={16} />
+              <span className="text-[9px] font-bold uppercase">Receita</span>
             </button>
             <button
               type="button"
               onClick={() => handleNatureChange('TRANSFER')}
-              className={`p-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 ${
+              className={`p-2 rounded-xl border-2 transition-all flex flex-col items-center gap-1 ${
                 (nature === 'TRANSFER' || nature === 'TRANSFER_OUT' || nature === 'TRANSFER_IN') ? 'border-blue-600 bg-blue-600/10 text-blue-400' : 'border-slate-800 text-slate-500 hover:border-slate-700'
               }`}
             >
-              <CreditCard size={18} />
-              <span className="text-[10px] font-bold uppercase">Transf</span>
+              <CreditCard size={16} />
+              <span className="text-[9px] font-bold uppercase">Transf</span>
             </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">
-              {(nature === 'TRANSFER' || nature === 'TRANSFER_OUT' || nature === 'TRANSFER_IN') ? 'Carteira de Origem' : 'Carteira'}
-            </label>
-            <select 
-              value={walletId}
-              onChange={e => handleWalletChange(e.target.value)}
-              className="w-full font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-4 outline-none appearance-none text-slate-100 text-lg shadow-inner"
-            >
-              {wallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
-          </div>
-          {(nature === 'TRANSFER' || nature === 'TRANSFER_OUT' || nature === 'TRANSFER_IN') && (
-            <div>
-              <label className="text-xs font-bold text-slate-500 uppercase mb-1 block text-blue-400">Carteira de Destino</label>
-              <select 
-                value={destinationWalletId}
-                onChange={e => setDestinationWalletId(e.target.value)}
-                className="w-full font-bold bg-[#0f172a] border-blue-600/30 ring-1 ring-blue-600/20 rounded-xl px-4 py-4 outline-none appearance-none text-slate-100 text-lg shadow-inner"
-              >
-                {wallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
-            </div>
-          )}
-        </div>
-
         {nature !== 'TRANSFER' && (
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { icon: <CheckCircle size={16}/>, label: 'Único', val: 'SINGLE' },
-              { icon: <Calendar size={16}/>, label: 'Parcela', val: 'INSTALLMENT' },
-              { icon: <TrendingUp size={16}/>, label: 'Variável', val: 'RECURRING' },
-              { icon: <PieChart size={16}/>, label: 'Contínuo', val: 'CONTINUOUS' },
-            ].map(opt => (
-              <button
-                key={opt.val}
-                type="button"
-                onClick={() => setType(opt.val as TransactionType)}
-                className={`flex flex-col items-center gap-2 p-3 rounded-2xl border-2 transition-all ${
-                  type === opt.val ? 'border-blue-600 bg-blue-600/10 text-blue-400' : 'border-slate-800 hover:border-slate-700 text-slate-500'
-                }`}
-              >
-                {opt.icon}
-                <span className="text-[10px] font-bold uppercase tracking-tighter">{opt.label}</span>
-              </button>
-            ))}
+          <div className="animate-in fade-in slide-in-from-top-1">
+            <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Tipo de Pagamento</label>
+            <div className="grid grid-cols-4 gap-1">
+              {[
+                { icon: <CheckCircle size={14}/>, label: 'Único', val: 'SINGLE' },
+                { icon: <Calendar size={14}/>, label: 'Parcela', val: 'INSTALLMENT' },
+                { icon: <TrendingUp size={14}/>, label: 'Variável', val: 'RECURRING' },
+                { icon: <PieChart size={14}/>, label: 'Contínuo', val: 'CONTINUOUS' },
+              ].map(opt => (
+                <button
+                  key={opt.val}
+                  type="button"
+                  onClick={() => setType(opt.val as TransactionType)}
+                  className={`flex flex-col items-center gap-1 p-2 rounded-xl border transition-all ${
+                    type === opt.val ? 'border-blue-600 bg-blue-600/10 text-blue-400' : 'border-slate-800 hover:border-slate-700 text-slate-500'
+                  }`}
+                >
+                  {opt.icon}
+                  <span className="text-[8px] font-bold uppercase tracking-tighter">{opt.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
-        <div>
-          <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Descrição</label>
-          <input 
-            required 
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            className="w-full text-lg font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-4 outline-none text-slate-100 shadow-inner"
-            placeholder={nature === 'TRANSFER' ? "Ex: Transferência para reserva" : "Ex: Supermercado"}
-          />
-        </div>
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+          <div className="md:col-span-12 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">
+                  {(nature === 'TRANSFER' || nature === 'TRANSFER_OUT' || nature === 'TRANSFER_IN') ? 'Carteira de Origem' : 'Carteira'}
+                </label>
+                <select 
+                  value={walletId}
+                  onChange={e => handleWalletChange(e.target.value)}
+                  className="w-full font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none appearance-none text-slate-100 text-base shadow-inner"
+                >
+                  {wallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
+              </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Valor</label>
-            <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-black">R$</span>
+              {(nature === 'TRANSFER' || nature === 'TRANSFER_OUT' || nature === 'TRANSFER_IN') ? (
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block text-blue-400">Carteira de Destino</label>
+                  <select 
+                    value={destinationWalletId}
+                    onChange={e => setDestinationWalletId(e.target.value)}
+                    className="w-full font-bold bg-[#0f172a] border-blue-600/30 ring-1 ring-blue-600/20 rounded-xl px-4 py-3 outline-none appearance-none text-slate-100 text-base shadow-inner"
+                  >
+                    {wallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Data de Evento</label>
+                    <input 
+                      type="date"
+                      value={date}
+                      onChange={e => setDate(e.target.value)}
+                      className="w-full text-base font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 shadow-inner"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Vencimento</label>
+                    <input 
+                      type="date"
+                      value={dueDate}
+                      onChange={e => setDueDate(e.target.value)}
+                      className="w-full text-base font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 shadow-inner"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {nature === 'TRANSFER' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Data de Evento</label>
+                  <input 
+                    type="date"
+                    value={date}
+                    onChange={e => setDate(e.target.value)}
+                    className="w-full text-base font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 shadow-inner"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Vencimento</label>
+                  <input 
+                    type="date"
+                    value={dueDate}
+                    onChange={e => setDueDate(e.target.value)}
+                    className="w-full text-base font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 shadow-inner"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Descrição</label>
               <input 
                 required 
-                type="number"
-                step="0.01"
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                className={`w-full text-xl font-black bg-[#0f172a] border-slate-800 focus:ring-2 rounded-xl pl-12 pr-4 py-4 outline-none text-slate-100 shadow-inner ${
-                  nature === 'INCOME' ? 'focus:ring-emerald-500' : nature === 'EXPENSE' ? 'focus:ring-rose-500' : 'focus:ring-blue-500'
-                }`}
-                placeholder="0,00"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                className="w-full text-base font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 shadow-inner"
+                placeholder={nature === 'TRANSFER' ? "Ex: Transferência para reserva" : "Ex: Supermercado"}
               />
             </div>
-          </div>
-          <div>
-            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Data</label>
-            <input 
-              type="date"
-              value={date}
-              onChange={e => setDate(e.target.value)}
-              className="w-full text-lg font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-4 outline-none text-slate-100 shadow-inner"
-            />
+
+            <div className="space-y-4">
+              {nature !== 'TRANSFER' && (
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Categoria</label>
+                  <select 
+                    value={categoryId}
+                    onChange={e => setCategoryId(e.target.value)}
+                    className="w-full font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none appearance-none text-slate-100 text-lg shadow-inner"
+                  >
+                    {categories
+                      .filter(c => !c.type || c.type === 'BOTH' || c.type === nature)
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
+                    }
+                  </select>
+                </div>
+              )}
+              
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Valor</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-black">R$</span>
+                  <input 
+                    required 
+                    type="number"
+                    step="0.01"
+                    value={amount}
+                    onChange={e => setAmount(e.target.value)}
+                    onBlur={() => {
+                        if (amount) {
+                          setAmount(Number(amount).toFixed(2));
+                        }
+                    }}
+                    className={`w-full text-xl font-black bg-[#0f172a] border-slate-800 focus:ring-2 rounded-xl pl-12 pr-4 py-3 outline-none text-slate-100 shadow-inner ${
+                      nature === 'INCOME' ? 'focus:ring-emerald-500' : nature === 'EXPENSE' ? 'focus:ring-rose-500' : 'focus:ring-blue-500'
+                    }`}
+                    placeholder="0,00"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {nature !== 'TRANSFER' && type === 'INSTALLMENT' && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="pt-2">
+                 <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Número de Parcelas</label>
+                 <input 
+                    type="number" 
+                    min="2" 
+                    value={installments}
+                    onChange={e => setInstallments(Number(e.target.value))}
+                    className="w-full font-semibold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-2 outline-none text-slate-100"
+                 />
+              </motion.div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {nature !== 'TRANSFER' && (
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Atribuição</label>
+                  <div className="grid grid-cols-3 gap-1">
+                    {attributions.map(a => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => setAttributionId(a.id)}
+                        className={`p-2 rounded-xl border transition-all flex items-center justify-center gap-1 text-center ${
+                          attributionId === a.id 
+                            ? 'border-blue-600 bg-blue-600/10 text-blue-400' 
+                            : 'border-slate-800 text-slate-500 hover:border-slate-700'
+                        }`}
+                      >
+                        <User size={12} />
+                        <span className="text-[9px] font-black uppercase text-center">{a.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {nature !== 'TRANSFER' && type === 'SINGLE' && (
+                <div className="flex flex-col justify-end">
+                   <div className="flex items-center gap-2 bg-[#0f172a]/50 p-2.5 rounded-xl cursor-pointer hover:bg-[#0f172a] transition-colors h-[42px]" onClick={() => setIsPaid(!isPaid)}>
+                      <div className={`w-5 h-5 rounded flex items-center justify-center transition-all ${isPaid ? (nature === 'INCOME' ? 'bg-emerald-500' : 'bg-rose-500') + ' text-white border-transparent' : 'border-2 border-slate-700'}`}>
+                         {isPaid && <CheckCircle size={12} />}
+                      </div>
+                      <span className="text-xs font-semibold text-slate-400">{nature === 'INCOME' ? 'Já foi recebido?' : 'Já está pago?'}</span>
+                   </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-
-        {nature !== 'TRANSFER' && type === 'INSTALLMENT' && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}>
-             <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Número de Parcelas</label>
-             <input 
-                type="number" 
-                min="2" 
-                value={installments}
-                onChange={e => setInstallments(Number(e.target.value))}
-                className="w-full font-semibold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100"
-             />
-          </motion.div>
-        )}
-
-        {nature !== 'TRANSFER' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Categoria</label>
-              <select 
-                value={categoryId}
-                onChange={e => setCategoryId(e.target.value)}
-                className="w-full font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-4 outline-none appearance-none text-slate-100 shadow-inner"
-              >
-                {categories
-                  .filter(c => !c.type || c.type === 'BOTH' || c.type === nature)
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
-                }
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Atribuição</label>
-              <select 
-                value={attributionId}
-                onChange={e => setAttributionId(e.target.value)}
-                className="w-full font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-4 outline-none appearance-none text-slate-100 shadow-inner"
-              >
-                {attributions.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </div>
-          </div>
-        )}
-
-        {nature !== 'TRANSFER' && type === 'SINGLE' && (
-          <div className="flex items-center gap-3 bg-[#0f172a] p-4 rounded-2xl cursor-pointer" onClick={() => setIsPaid(!isPaid)}>
-             <div className={`w-6 h-6 rounded-md flex items-center justify-center transition-all ${isPaid ? (nature === 'INCOME' ? 'bg-emerald-500' : 'bg-rose-500') + ' text-white border-transparent' : 'border-2 border-slate-700'}`}>
-                {isPaid && <CheckCircle size={14} />}
-             </div>
-             <span className="text-sm font-semibold text-slate-400">{nature === 'INCOME' ? 'Já foi recebido?' : 'Já está pago?'}</span>
-          </div>
-        )}
       </div>
 
       <div className="pt-4 space-y-3">

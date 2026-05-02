@@ -29,7 +29,7 @@ export type TransactionType =
   | 'SINGLE'        // Pagamento único
   | 'INSTALLMENT'   // Parcelado
   | 'RECURRING'     // Recorrente variável
-  | 'CONTINUOUS';   // Contínuo (Orçamento)
+  | 'CONTINUOUS';   // Contínuo (Meta)
 
 export type TransactionNature = 'INCOME' | 'EXPENSE' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'TRANSFER';
 
@@ -40,6 +40,7 @@ export interface Transaction {
   description: string;
   amount: number;
   date: string;
+  dueDate?: string;
   isPaid: boolean;
   type: TransactionType;
   nature: TransactionNature;
@@ -78,5 +79,5 @@ export const INITIAL_WALLETS: Wallet[] = [
 export const INITIAL_ATTRIBUTIONS: Attribution[] = [
   { id: 'attr-1', name: 'Casal' },
   { id: 'attr-2', name: 'Fabio' },
-  { id: 'attr-3', name: 'Josi' },
+  { id: 'attr-3', name: 'Grasi' },
 ];
