@@ -25,6 +25,7 @@ interface FinanceContextType {
   transferFunds: (data: { fromWalletId: string, toWalletId: string, amount: number, date: string, dueDate?: string, description: string }) => void;
   updateTransaction: (id: string, data: Partial<Transaction>) => void;
   deleteTransaction: (id: string) => void;
+  updateTransactionGroup: (groupId: string, data: Partial<Transaction>) => void;
   payTransaction: (id: string, paidAmount?: number) => void;
   addWallet: (wallet: Omit<Wallet, 'id'>) => void;
   updateWallet: (id: string, data: Partial<Wallet>) => void;
@@ -242,6 +243,18 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const updateTransactionGroup = useCallback((groupId: string, data: Partial<Transaction>) => {
+    setTransactions(prev => prev.map(t => {
+      if (t.groupId === groupId) {
+        // When updating a group, we typically want to update category, description, nature, maybe amount
+        // But we must NOT update id, installmentsNumber, totalInstallments, date, etc.
+        const { id, installmentNumber, totalInstallments, date, dueDate, ...validData } = data as any;
+        return { ...t, ...validData };
+      }
+      return t;
+    }));
+  }, []);
+
   const payTransaction = useCallback((id: string, paidAmount?: number) => {
     setTransactions(prev => prev.map(t => {
       if (t.id === id) {
@@ -332,6 +345,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       budgets,
       addTransaction,
       updateTransaction,
+      updateTransactionGroup,
       deleteTransaction,
       payTransaction,
       transferFunds,

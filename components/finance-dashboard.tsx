@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useFinance } from '@/hooks/use-finance';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { TransactionNature, TransactionType } from '@/lib/types';
-import { Plus, Wallet as WalletIcon, CreditCard, Banknote, Calendar, CheckCircle, AlertCircle, TrendingUp, TrendingDown, PieChart, MoreVertical, Filter, Search, User } from 'lucide-react';
+import { Plus, Wallet as WalletIcon, CreditCard, Banknote, Calendar, CheckCircle, AlertCircle, TrendingUp, TrendingDown, PieChart, MoreVertical, Filter, Search, User, X, Menu, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format, isAfter, isBefore, addDays, addMonths } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart as RePieChart, Pie } from 'recharts';
@@ -157,6 +157,8 @@ export default function FinanceDashboard() {
   const [showCopyBudgetModal, setShowCopyBudgetModal] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<any>(null);
   const [selectedAttribution, setSelectedAttribution] = useState<any>(null);
+  const [selectedGroup, setSelectedGroup] = useState<any>(null);
+  const [showGroupEdit, setShowGroupEdit] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [mounted, setMounted] = React.useState(false);
 
@@ -173,6 +175,7 @@ export default function FinanceDashboard() {
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [mgmtSortBy, setMgmtSortBy] = useState<'name' | 'budget' | 'realized'>('name');
+  const [mgmtViewMode, setMgmtViewMode] = useState<'CATEGORIES' | 'ATTRIBUTIONS'>('CATEGORIES');
   const [mgmtFilterAttribution, setMgmtFilterAttribution] = useState('ALL');
   const [mgmtFilterWallet, setMgmtFilterWallet] = useState('ALL');
   const [hideTransfers, setHideTransfers] = useState(true);
@@ -351,20 +354,65 @@ export default function FinanceDashboard() {
       </aside>
 
       {/* Mobile Top Header */}
-      <div className="md:hidden bg-[#1e293b] border-b border-slate-800 px-4 h-16 flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">F</div>
-          <h1 className="text-lg font-bold">Finantech</h1>
+      <div className="md:hidden bg-[#1e293b] border-b border-slate-800 sticky top-0 z-40 overflow-hidden">
+        <div className="px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="p-2 text-slate-400 hover:text-white transition-colors"
+            >
+              <Menu size={24} />
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">F</div>
+              <h1 className="text-lg font-bold">Finantech</h1>
+            </div>
+          </div>
+          <button 
+            onClick={() => {
+              setSelectedTransaction(null);
+              setShowAddForm(true);
+            }}
+            className="p-2 bg-blue-600 text-white rounded-lg shadow-md"
+          >
+            <Plus size={20} />
+          </button>
         </div>
-        <button 
-          onClick={() => {
-            setSelectedTransaction(null);
-            setShowAddForm(true);
-          }}
-          className="p-2 bg-blue-600 text-white rounded-lg shadow-md"
-        >
-          <Plus size={20} />
-        </button>
+
+        {/* Accordion Menu Mobile */}
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-md"
+            >
+              <div className="p-4 grid grid-cols-2 gap-2">
+                {navItems.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id as any);
+                      setIsMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
+                      activeTab === item.id 
+                        ? 'bg-blue-600 text-white shadow-lg' 
+                        : 'text-slate-400 bg-slate-800/50 hover:bg-slate-800 hover:text-slate-200 border border-slate-700/50'
+                    }`}
+                  >
+                    <div className={activeTab === item.id ? 'text-white' : 'text-blue-400'}>
+                      {React.cloneElement(item.icon as React.ReactElement, { size: 16 } as any)}
+                    </div>
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Main Content Area */}
@@ -385,7 +433,32 @@ export default function FinanceDashboard() {
                       <h2 className="text-2xl font-black tracking-tight text-slate-100">Gestão de Categorias</h2>
                       <p className="text-slate-500 text-sm font-bold">Consolidado de transações e planejamento mensal</p>
                     </div>
+                    <button 
+                      onClick={() => {
+                        setSelectedTransaction(null);
+                        setShowAddForm(true);
+                      }}
+                      className="hidden md:flex items-center justify-center bg-blue-600 text-white w-10 h-10 rounded-xl hover:bg-blue-700 transition-all shadow-lg active:scale-95"
+                      title="Novo Registro"
+                    >
+                      <Plus size={24} />
+                    </button>
                     <div className="flex flex-wrap items-center gap-2 bg-slate-800/40 p-1 rounded-2xl border border-slate-800">
+                       <div className="flex items-center gap-1 px-2 border-r border-slate-700">
+                        <button 
+                          onClick={() => setMgmtViewMode('CATEGORIES')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${mgmtViewMode === 'CATEGORIES' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                          CATEGORIAS
+                        </button>
+                        <button 
+                          onClick={() => setMgmtViewMode('ATTRIBUTIONS')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${mgmtViewMode === 'ATTRIBUTIONS' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                          ATRIBUIÇÕES
+                        </button>
+                      </div>
+
                        <div className="flex items-center gap-1 px-2 border-r border-slate-700">
                         <button 
                           onClick={() => setMgmtSortBy('name')}
@@ -420,7 +493,7 @@ export default function FinanceDashboard() {
                           onChange={e => setMgmtFilterAttribution(e.target.value)}
                           className="text-xs font-bold outline-none bg-transparent text-slate-200"
                         >
-                          <option value="ALL">Todas Atrob.</option>
+                          <option value="ALL">Todas Atrib.</option>
                           {attributions.map(attr => (
                             <option key={attr.id} value={attr.id}>{attr.name}</option>
                           ))}
@@ -434,7 +507,7 @@ export default function FinanceDashboard() {
                           onChange={e => setMgmtFilterWallet(e.target.value)}
                           className="text-xs font-bold outline-none bg-transparent text-slate-200"
                         >
-                          <option value="ALL">Todas Kart.</option>
+                          <option value="ALL">Todas Cart.</option>
                           {wallets.map(w => (
                             <option key={w.id} value={w.id}>{w.name}</option>
                           ))}
@@ -455,147 +528,274 @@ export default function FinanceDashboard() {
                   </div>
 
                   <div className="grid grid-cols-1 gap-6">
-                    {/* Simplified Budget Board */}
-                    <div className="space-y-6">
-                      <Card className="p-6 border-none bg-gradient-to-br from-slate-800/50 to-slate-900/50">
-                        <div className="flex items-center justify-between mb-8">
-                          <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                             <PieChart size={16} className="text-blue-400" /> Comparativo de Metas
-                          </h3>
-                        </div>
-                        <div className="space-y-6">
-                          {(() => {
-                            const mgmtCategories = categories
-                              .filter(cat => {
-                                const isBudgeted = !cat.excludeFromBudget;
-                                const spent = transactions
-                                  .filter(t => {
-                                    const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.date);
-                                    const tMonth = format(tDate, 'yyyy-MM');
-                                    const matchesMonth = tMonth === currentMonth;
-                                    const matchesAttribution = mgmtFilterAttribution === 'ALL' || t.attributionId === mgmtFilterAttribution;
-                                    const matchesWallet = mgmtFilterWallet === 'ALL' || t.walletId === mgmtFilterWallet;
-                                    const isExpenseNature = t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature;
-                                    return t.categoryId === cat.id && matchesMonth && matchesAttribution && matchesWallet && isExpenseNature;
-                                  })
-                                  .reduce((acc, t) => acc + t.amount, 0);
-                                return isBudgeted || spent > 0;
-                              })
-                              .map(cat => {
-                                const budget = budgets.find(b => b.categoryId === cat.id && b.month === currentMonth)?.amount || 0;
-                                const spent = transactions
-                                  .filter(t => {
-                                    const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.date);
-                                    const tMonth = format(tDate, 'yyyy-MM');
-                                    const matchesMonth = tMonth === currentMonth;
-                                    const matchesAttribution = mgmtFilterAttribution === 'ALL' || t.attributionId === mgmtFilterAttribution;
-                                    const matchesWallet = mgmtFilterWallet === 'ALL' || t.walletId === mgmtFilterWallet;
-                                    const isExpenseNature = t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature;
-                                    return t.categoryId === cat.id && matchesMonth && matchesAttribution && matchesWallet && isExpenseNature;
-                                  })
-                                  .reduce((acc, t) => acc + t.amount, 0);
-                                return { ...cat, budget, spent };
-                              })
-                              .sort((a, b) => {
-                                // Always prioritize those with budget presence
-                                const aHasBudget = a.budget > 0;
-                                const bHasBudget = b.budget > 0;
-                                if (aHasBudget && !bHasBudget) return -1;
-                                if (!aHasBudget && bHasBudget) return 1;
-
-                                if (mgmtSortBy === 'name') return a.name.localeCompare(b.name);
-                                if (mgmtSortBy === 'budget') return b.budget - a.budget;
-                                if (mgmtSortBy === 'realized') return b.spent - a.spent;
-                                return 0;
-                              });
-
-                            const totalBudgeted = mgmtCategories.reduce((acc, cat) => acc + (cat.budget > 0 ? cat.budget : cat.spent), 0);
-                            const totalRealized = mgmtCategories.reduce((acc, cat) => acc + cat.spent, 0);
-
-                            return (
-                              <>
-                                <div className="space-y-6">
-                                  {mgmtCategories.map(cat => {
-                                    const percent = cat.budget > 0 ? Math.min((cat.spent / cat.budget) * 100, 100) : 0;
-                                    const isOverBudget = cat.budget > 0 && cat.spent > cat.budget;
-
-                                    return (
-                                      <div 
-                                        key={cat.id} 
-                                        className="space-y-2 cursor-pointer hover:bg-slate-800/30 p-2 rounded-xl transition-colors"
-                                        onClick={() => {
-                                          setViewingCategory(cat);
-                                          setShowCategoryTransactions(true);
-                                        }}
-                                      >
-                                        <div className="flex justify-between items-end">
-                                          <div className="flex items-center gap-2">
-                                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cat.color }} />
-                                            <span className="font-bold text-slate-200 text-sm md:text-xl">{cat.name}</span>
-                                          </div>
-                                          <div className="text-right">
-                                            <span className={`text-xs md:text-lg font-black block ${isOverBudget ? 'text-rose-400' : 'text-slate-100'}`}>
-                                              {cat.budget > 0 && (
-                                                <>
-                                                  <span className="text-slate-400">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cat.budget)}</span>
-                                                  <span className="text-slate-500 mx-1">/</span>
-                                                </>
-                                              )}
-                                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cat.spent)}
-                                            </span>
-                                          </div>
-                                        </div>
-                                        {cat.budget > 0 && (
-                                          <div className="mt-4 pr-14">
-                                            <div className="relative h-2 md:h-3.5 bg-slate-800/50 rounded-full shadow-inner">
-                                              <motion.div 
-                                                initial={{ width: 0 }}
-                                                animate={{ width: cat.budget > 0 ? `${Math.min(percent, 100)}%` : '100%' }}
-                                                className={`h-full rounded-full transition-all duration-1000 ${isOverBudget || (cat.budget === 0 && cat.spent > 0) ? 'bg-rose-500' : ''}`}
-                                                style={(!isOverBudget && cat.budget > 0) ? { backgroundColor: cat.color } : { backgroundColor: cat.budget === 0 ? cat.color : undefined }}
-                                              />
-                                              <motion.span 
-                                                initial={{ opacity: 0 }}
-                                                animate={{ 
-                                                  opacity: 1,
-                                                  left: cat.budget > 0 ? `${Math.min(percent, 100)}%` : '100%'
-                                                }}
-                                                className={`absolute top-1/2 -translate-y-1/2 ml-2 text-[10px] md:text-lg font-black whitespace-nowrap pointer-events-none ${isOverBudget ? 'text-rose-400' : 'text-slate-400'}`}
-                                                style={{ 
-                                                  transition: 'left 1s cubic-bezier(0.4, 0, 0.2, 1)',
-                                                  zIndex: 10
-                                                }}
-                                              >
-                                                {cat.budget > 0 ? `${Math.round((cat.spent / cat.budget) * 100)}%` : (cat.spent > 0 ? '100%' : '0%')}
-                                              </motion.span>
+                    {mgmtViewMode === 'CATEGORIES' ? (
+                      <div className="space-y-6">
+                        <Card className="p-6 border-none bg-gradient-to-br from-slate-800/50 to-slate-900/50">
+                          <div className="flex items-center justify-between mb-8">
+                            <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                               <PieChart size={16} className="text-blue-400" /> Comparativo de Metas
+                            </h3>
+                          </div>
+                          <div className="space-y-6">
+                            {(() => {
+                              const mgmtCategories = categories
+                                .filter(cat => {
+                                  const isBudgeted = !cat.excludeFromBudget;
+                                  const spent = transactions
+                                    .filter(t => {
+                                      const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.date);
+                                      const tMonth = format(tDate, 'yyyy-MM');
+                                      const matchesMonth = tMonth === currentMonth;
+                                      const matchesAttribution = mgmtFilterAttribution === 'ALL' || t.attributionId === mgmtFilterAttribution;
+                                      const matchesWallet = mgmtFilterWallet === 'ALL' || t.walletId === mgmtFilterWallet;
+                                      const isExpenseNature = t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature;
+                                      return t.categoryId === cat.id && matchesMonth && matchesAttribution && matchesWallet && isExpenseNature;
+                                    })
+                                    .reduce((acc, t) => acc + t.amount, 0);
+                                  return isBudgeted || spent > 0;
+                                })
+                                .map(cat => {
+                                  const budget = budgets.find(b => b.categoryId === cat.id && b.month === currentMonth)?.amount || 0;
+                                  const spent = transactions
+                                    .filter(t => {
+                                      const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.date);
+                                      const tMonth = format(tDate, 'yyyy-MM');
+                                      const matchesMonth = tMonth === currentMonth;
+                                      const matchesAttribution = mgmtFilterAttribution === 'ALL' || t.attributionId === mgmtFilterAttribution;
+                                      const matchesWallet = mgmtFilterWallet === 'ALL' || t.walletId === mgmtFilterWallet;
+                                      const isExpenseNature = t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature;
+                                      return t.categoryId === cat.id && matchesMonth && matchesAttribution && matchesWallet && isExpenseNature;
+                                    })
+                                    .reduce((acc, t) => acc + t.amount, 0);
+                                  return { ...cat, budget, spent };
+                                })
+                                .sort((a, b) => {
+                                  // Always prioritize those with budget presence
+                                  const aHasBudget = a.budget > 0;
+                                  const bHasBudget = b.budget > 0;
+                                  if (aHasBudget && !bHasBudget) return -1;
+                                  if (!aHasBudget && bHasBudget) return 1;
+  
+                                  if (mgmtSortBy === 'name') return a.name.localeCompare(b.name);
+                                  if (mgmtSortBy === 'budget') return b.budget - a.budget;
+                                  if (mgmtSortBy === 'realized') return b.spent - a.spent;
+                                  return 0;
+                                });
+  
+                              const totalBudgeted = mgmtCategories.reduce((acc, cat) => acc + (cat.budget > 0 ? cat.budget : cat.spent), 0);
+                              const totalRealized = mgmtCategories.reduce((acc, cat) => acc + cat.spent, 0);
+  
+                              return (
+                                <>
+                                  <div className="space-y-6">
+                                    {mgmtCategories.map(cat => {
+                                      const percent = cat.budget > 0 ? Math.min((cat.spent / cat.budget) * 100, 100) : 0;
+                                      const isOverBudget = cat.budget > 0 && cat.spent > cat.budget;
+  
+                                      return (
+                                        <div 
+                                          key={cat.id} 
+                                          className="space-y-2 cursor-pointer hover:bg-slate-800/30 p-2 rounded-xl transition-colors"
+                                          onClick={() => {
+                                            setViewingCategory(cat);
+                                            setShowCategoryTransactions(true);
+                                          }}
+                                        >
+                                          <div className="flex justify-between items-end">
+                                            <div className="flex items-center gap-2">
+                                              <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cat.color }} />
+                                              <span className="font-bold text-slate-200 text-sm md:text-xl">{cat.name}</span>
+                                            </div>
+                                            <div className="text-right">
+                                              <span className={`text-xs md:text-lg font-black block ${isOverBudget ? 'text-rose-400' : 'text-slate-100'}`}>
+                                                {cat.budget > 0 && (
+                                                  <>
+                                                    <span className="text-slate-400">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cat.budget)}</span>
+                                                    <span className="text-slate-500 mx-1">/</span>
+                                                  </>
+                                                )}
+                                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cat.spent)}
+                                              </span>
                                             </div>
                                           </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-
-                                <div className="mt-10 pt-6 border-t border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-900/40 -mx-6 px-6 pb-2">
-                                  <div>
-                                    <span className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-widest block mb-1">Total Planejado</span>
-                                    <span className="text-lg md:text-xl font-black text-slate-100 tracking-tighter">
-                                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBudgeted)}
-                                    </span>
+                                          {cat.budget > 0 && (
+                                            <div className="mt-4 pr-14">
+                                              <div className="relative h-2 md:h-3.5 bg-slate-800/50 rounded-full shadow-inner">
+                                                <motion.div 
+                                                  initial={{ width: 0 }}
+                                                  animate={{ width: cat.budget > 0 ? `${Math.min(percent, 100)}%` : '100%' }}
+                                                  className={`h-full rounded-full transition-all duration-1000 ${isOverBudget || (cat.budget === 0 && cat.spent > 0) ? 'bg-rose-500' : ''}`}
+                                                  style={(!isOverBudget && cat.budget > 0) ? { backgroundColor: cat.color } : { backgroundColor: cat.budget === 0 ? cat.color : undefined }}
+                                                />
+                                                <motion.span 
+                                                  initial={{ opacity: 0 }}
+                                                  animate={{ 
+                                                    opacity: 1,
+                                                    left: cat.budget > 0 ? `${Math.min(percent, 100)}%` : '100%'
+                                                  }}
+                                                  className={`absolute top-1/2 -translate-y-1/2 ml-2 text-[10px] md:text-lg font-black whitespace-nowrap pointer-events-none ${isOverBudget ? 'text-rose-400' : 'text-slate-400'}`}
+                                                  style={{ 
+                                                    transition: 'left 1s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                    zIndex: 10
+                                                  }}
+                                                >
+                                                  {cat.budget > 0 ? `${Math.round((cat.spent / cat.budget) * 100)}%` : (cat.spent > 0 ? '100%' : '0%')}
+                                                </motion.span>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+  
+                                  <div className="mt-10 pt-6 border-t border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-900/40 -mx-6 px-6 pb-2">
+                                    <div>
+                                      <span className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-widest block mb-1">Total Planejado</span>
+                                      <span className="text-lg md:text-xl font-black text-slate-100 tracking-tighter">
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBudgeted)}
+                                      </span>
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-widest block mb-1">Total Realizado</span>
+                                      <span className={`text-xl md:text-2xl font-black tracking-tighter ${totalRealized > totalBudgeted ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalRealized)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </Card>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {attributions.map(attr => {
+                            const attrTransactions = transactions.filter(t => {
+                              const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.date);
+                              const matchesMonth = format(tDate, 'yyyy-MM') === currentMonth;
+                              const matchesWallet = mgmtFilterWallet === 'ALL' || t.walletId === mgmtFilterWallet;
+                              const isExpense = t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature;
+                              return t.attributionId === attr.id && matchesMonth && matchesWallet && isExpense;
+                            });
+  
+                            const totalSpent = attrTransactions.reduce((acc, t) => acc + t.amount, 0);
+  
+                            const catBreakdown = categories
+                              .map(cat => {
+                                const spent = attrTransactions
+                                  .filter(t => t.categoryId === cat.id)
+                                  .reduce((acc, t) => acc + t.amount, 0);
+                                return { ...cat, spent };
+                              })
+                              .filter(cat => cat.spent > 0)
+                              .sort((a, b) => b.spent - a.spent);
+  
+                            return (
+                              <Card key={attr.id} className="p-6 border-none bg-gradient-to-br from-slate-800/50 to-slate-900/50 flex flex-col">
+                                <div className="flex items-center justify-between mb-6 border-b border-slate-700/50 pb-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400">
+                                      <User size={20} />
+                                    </div>
+                                    <div>
+                                      <h3 className="font-black text-slate-100 uppercase tracking-widest text-sm">{attr.name}</h3>
+                                      <p className="text-[10px] font-bold text-slate-500 uppercase">Resumo Mensal</p>
+                                    </div>
                                   </div>
                                   <div className="text-right">
-                                    <span className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-widest block mb-1">Total Realizado</span>
-                                    <span className={`text-xl md:text-2xl font-black tracking-tighter ${totalRealized > totalBudgeted ? 'text-rose-400' : 'text-emerald-400'}`}>
-                                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalRealized)}
+                                    <span className="text-[10px] font-black text-slate-500 uppercase block mb-1">Total Gasto</span>
+                                    <span className="text-xl font-black text-emerald-400 tracking-tighter">
+                                      {formatCurrency(totalSpent)}
                                     </span>
                                   </div>
                                 </div>
-                              </>
+  
+                                <div className="flex-1 space-y-3 mb-6">
+                                  {catBreakdown.length > 0 ? catBreakdown.map(cat => (
+                                    <div key={cat.id} className="flex items-center justify-between group">
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cat.color }} />
+                                        <span className="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">{cat.name}</span>
+                                      </div>
+                                      <span className="text-xs font-black text-slate-400">{formatCurrency(cat.spent)}</span>
+                                    </div>
+                                  )) : (
+                                    <div className="flex flex-col items-center justify-center py-8 text-slate-600">
+                                      <AlertCircle size={24} className="mb-2 opacity-20" />
+                                      <span className="text-[10px] font-black uppercase">Sem gastos este mês</span>
+                                    </div>
+                                  )}
+                                </div>
+  
+                                {attrTransactions.length > 0 && (
+                                  <div className="mt-auto pt-4 border-t border-slate-700/30">
+                                     <div className="text-[10px] font-black text-slate-500 uppercase mb-4 flex items-center gap-2">
+                                        <MoreVertical size={12} /> Últimos Lançamentos
+                                     </div>
+                                     <div className="space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar pr-2">
+                                        {attrTransactions.slice(0, 10).map((t, idx) => (
+                                          <div key={t.id || idx} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0 hover:bg-white/5 px-2 rounded-lg transition-colors cursor-pointer"
+                                               onClick={() => {
+                                                  setSelectedTransaction(t);
+                                                  setShowAddForm(true);
+                                               }}>
+                                            <div className="flex flex-col">
+                                              <span className="text-[10px] font-black text-slate-200 uppercase truncate max-w-[150px]">{t.description}</span>
+                                              <span className="text-[9px] font-bold text-slate-500">{format(new Date(t.dueDate || t.date), 'dd/MM/yyyy')}</span>
+                                            </div>
+                                            <span className="text-[10px] font-black text-slate-100">{formatCurrency(t.amount)}</span>
+                                          </div>
+                                        ))}
+                                        {attrTransactions.length > 10 && (
+                                          <button 
+                                            className="w-full py-2 text-center text-[10px] font-black text-blue-400 hover:text-blue-300 uppercase mt-2 bg-blue-400/5 rounded-lg border border-blue-400/10"
+                                            onClick={() => {
+                                              // Maybe open a filtered transactions view?
+                                              // For now just show more if needed or just handle it via the regular transactions tab
+                                            }}
+                                          >
+                                            Ver mais {attrTransactions.length - 10} itens
+                                          </button>
+                                        )}
+                                     </div>
+                                  </div>
+                                )}
+                              </Card>
                             );
-                          })()}
+                          })}
                         </div>
-                      </Card>
-                    </div>
+  
+                        <div className="mt-10 pt-6 border-t border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-900/40 -mx-6 px-6 pb-2">
+                          <div>
+                            <span className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-widest block mb-1">Total Atribuído</span>
+                            <span className="text-xl md:text-2xl font-black text-slate-100 tracking-tighter">
+                              {formatCurrency(transactions.filter(t => {
+                                const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.date);
+                                const matchesMonth = format(tDate, 'yyyy-MM') === currentMonth;
+                                const matchesWallet = mgmtFilterWallet === 'ALL' || t.walletId === mgmtFilterWallet;
+                                const isExpense = t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature;
+                                return matchesMonth && matchesWallet && isExpense;
+                              }).reduce((acc, t) => acc + t.amount, 0))}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] md:text-xs font-black text-slate-500 uppercase tracking-widest block mb-1">Qtd. Transações</span>
+                            <span className="text-xl md:text-2xl font-black text-blue-400 tracking-tighter">
+                              {transactions.filter(t => {
+                                const tDate = t.dueDate ? new Date(t.dueDate) : new Date(t.date);
+                                const matchesMonth = format(tDate, 'yyyy-MM') === currentMonth;
+                                const matchesWallet = mgmtFilterWallet === 'ALL' || t.walletId === mgmtFilterWallet;
+                                const isExpense = t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER' || !t.nature;
+                                return matchesMonth && matchesWallet && isExpense;
+                              }).length} itens
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
@@ -644,6 +844,16 @@ export default function FinanceDashboard() {
                       <h2 className="text-2xl font-bold tracking-tight text-slate-100">Gestão de Parcelamentos</h2>
                       <p className="text-slate-400 text-sm font-bold">Acompanhe todos os seus compromissos parcelados</p>
                     </div>
+                    <button 
+                      onClick={() => {
+                        setSelectedTransaction(null);
+                        setShowAddForm(true);
+                      }}
+                      className="hidden md:flex items-center justify-center bg-blue-600 text-white w-10 h-10 rounded-xl hover:bg-blue-700 transition-all shadow-lg active:scale-95"
+                      title="Novo Registro"
+                    >
+                      <Plus size={24} />
+                    </button>
                   </div>
 
                   <div className="grid grid-cols-1 gap-4">
@@ -728,6 +938,15 @@ export default function FinanceDashboard() {
                                      <div className={`text-xs font-black px-3 py-1 rounded-full uppercase tracking-widest ${group.paidCount === group.count ? 'bg-emerald-500/10 text-emerald-400' : 'bg-blue-500/10 text-blue-400'}`}>
                                         {percent}%
                                      </div>
+                                     <button 
+                                      onClick={() => {
+                                        setSelectedGroup(group);
+                                        setShowGroupEdit(true);
+                                      }}
+                                      className="text-[10px] font-black text-slate-500 hover:text-blue-400 uppercase tracking-tighter transition-colors flex items-center gap-1"
+                                     >
+                                      <Search size={10} /> Editar Grupo
+                                     </button>
                                   </div>
                                 </div>
                             </div>
@@ -794,6 +1013,23 @@ export default function FinanceDashboard() {
 
               {activeTab === 'overview' && (
                 <div className="space-y-8">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <h2 className="text-2xl font-bold tracking-tight text-slate-100">Visão Geral</h2>
+                      <p className="text-slate-400 text-sm font-bold">Resumo geral das suas finanças</p>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setSelectedTransaction(null);
+                        setShowAddForm(true);
+                      }}
+                      className="hidden md:flex items-center justify-center bg-blue-600 text-white w-10 h-10 rounded-xl hover:bg-blue-700 transition-all shadow-lg active:scale-95"
+                      title="Novo Registro"
+                    >
+                      <Plus size={24} />
+                    </button>
+                  </div>
+
                   {/* Metric Cards */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <Card className="p-6 bg-blue-600 text-white border-0">
@@ -980,7 +1216,19 @@ export default function FinanceDashboard() {
               {activeTab === 'transactions' && (
                 <div className="space-y-6">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <h2 className="text-2xl font-bold tracking-tight">Transações</h2>
+                    <div className="flex items-center gap-4">
+                      <h2 className="text-2xl font-bold tracking-tight">Transações</h2>
+                      <button 
+                        onClick={() => {
+                          setSelectedTransaction(null);
+                          setShowAddForm(true);
+                        }}
+                        className="hidden md:flex items-center justify-center bg-blue-600 text-white w-9 h-9 rounded-xl hover:bg-blue-700 transition-all shadow-md"
+                        title="Novo Registro"
+                      >
+                        <Plus size={20} />
+                      </button>
+                    </div>
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="relative flex-1 min-w-[200px]">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
@@ -1363,21 +1611,7 @@ export default function FinanceDashboard() {
         </div>
       </main>
 
-      {/* Bottom Nav - Mobile */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#1e293b] border-t border-slate-800 px-6 h-16 flex items-center justify-between z-50">
-        {navItems.map(item => (
-          <button
-            key={item.id}
-            onClick={() => setActiveTab(item.id as any)}
-            className={`flex flex-col items-center gap-1 transition-all ${
-              activeTab === item.id ? 'text-blue-400' : 'text-slate-500'
-            }`}
-          >
-            {item.icon}
-            <span className="text-[10px] font-bold">{item.label}</span>
-          </button>
-        ))}
-      </nav>
+      {/* Bottom Nav Removed - Moved to Top Accordion */}
 
       {/* Transaction Modal */}
       <AnimatePresence>
@@ -1449,6 +1683,12 @@ export default function FinanceDashboard() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {showGroupEdit && selectedGroup && (
+          <GroupEditModal group={selectedGroup} onClose={() => setShowGroupEdit(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {showAttributionForm && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAttributionForm(false)} />
@@ -1458,59 +1698,6 @@ export default function FinanceDashboard() {
           </div>
         )}
       </AnimatePresence>
-      {/* Mobile Bottom Navigation */}
-      <div className="md:hidden fixed bottom-6 left-4 right-4 z-50">
-        <AnimatePresence>
-          {isMobileMenuOpen && (
-            <motion.div
-              initial={{ opacity: 0, y: 10, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="absolute bottom-full mb-4 left-0 right-0 bg-[#1e293b]/95 backdrop-blur-md border border-slate-700/50 rounded-3xl p-4 shadow-2xl space-y-1"
-            >
-              <div className="grid grid-cols-2 gap-2">
-                {navItems.map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setActiveTab(item.id as any);
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold transition-all ${
-                      activeTab === item.id 
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' 
-                        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                    }`}
-                  >
-                    {item.icon}
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <div className="bg-[#1e293b]/80 backdrop-blur-lg border border-slate-700/50 rounded-3xl p-2 flex items-center justify-between shadow-xl">
-          <button 
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-black text-sm transition-all ${isMobileMenuOpen ? 'bg-slate-800 text-blue-400' : 'text-slate-300'}`}
-          >
-            {isMobileMenuOpen ? <Plus size={20} className="rotate-45" /> : <Filter size={20} />}
-            MENU
-          </button>
-          
-          <button 
-            onClick={() => {
-              setSelectedTransaction(null);
-              setShowAddForm(true);
-            }}
-            className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 text-white rounded-2xl font-black text-sm shadow-lg shadow-blue-900/20 active:scale-95 transition-all"
-          >
-            <Plus size={20} /> NOVO
-          </button>
-        </div>
-      </div>
         </>
       )}
     </div>
@@ -1660,6 +1847,186 @@ function AttributionForm({ attribution, onClose }: { attribution?: any, onClose:
         )}
       </div>
     </form>
+  );
+}
+
+// Group Edit Modal
+function GroupEditModal({ group, onClose }: { group: any, onClose: () => void }) {
+  const { categories, wallets, attributions, updateTransactionGroup, deleteTransaction } = useFinance();
+  
+  const [description, setDescription] = useState(group.description || '');
+  const [amount, setAmount] = useState(group.items[0]?.amount?.toString() || '');
+  const [walletId, setWalletId] = useState(group.walletId || (wallets.length > 0 ? wallets[0].id : ''));
+  const [categoryId, setCategoryId] = useState(group.categoryId || (categories.length > 0 ? categories[0].id : ''));
+  const [attributionId, setAttributionId] = useState(group.attributionId || (attributions.length > 0 ? attributions[0].id : ''));
+  const [nature, setNature] = useState(group.nature || 'EXPENSE');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateTransactionGroup(group.id, {
+      description,
+      amount: parseFloat(amount),
+      walletId,
+      categoryId,
+      attributionId,
+      nature
+    });
+    onClose();
+  };
+
+  const handleDeleteGroup = () => {
+    const unpaidItems = group.items.filter((item: any) => !item.isPaid);
+    
+    if (unpaidItems.length === 0) {
+      alert('Todas as parcelas deste grupo já estão pagas e não podem ser excluídas por aqui.');
+      return;
+    }
+
+    const message = unpaidItems.length === group.items.length 
+      ? 'Tem certeza que deseja excluir TODO o grupo de parcelas?' 
+      : `Tem certeza que deseja excluir as ${unpaidItems.length} parcelas pendentes deste grupo? (As ${group.items.length - unpaidItems.length} parcelas já pagas serão mantidas)`;
+
+    if (confirm(message)) {
+      unpaidItems.forEach((item: any) => deleteTransaction(item.id));
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-[#1a2333] border border-slate-800 rounded-3xl w-full max-w-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+      >
+        <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+          <div>
+            <h2 className="text-xl font-black text-slate-100">Editar Grupo de Parcelas</h2>
+            <p className="text-xs font-bold text-slate-500 uppercase mt-1">Alterações refletirão em todas as {group.count} parcelas</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400">
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Descrição do Grupo</label>
+              <input 
+                required 
+                type="text" 
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                className="w-full text-lg font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 shadow-inner"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Valor por Parcela</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-black">R$</span>
+                  <input 
+                    required 
+                    type="number"
+                    step="0.01"
+                    value={amount}
+                    onChange={e => setAmount(e.target.value)}
+                    className="w-full text-lg font-black bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl pl-12 pr-4 py-3 outline-none text-slate-100"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Natureza</label>
+                <div className="flex bg-[#0f172a] p-1 rounded-xl border border-slate-800">
+                  <button 
+                    type="button"
+                    onClick={() => setNature('EXPENSE')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${nature === 'EXPENSE' ? 'bg-rose-500 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    DESPESA
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setNature('INCOME')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${nature === 'INCOME' ? 'bg-emerald-500 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    RECEITA
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Categoria</label>
+                <select 
+                  value={categoryId}
+                  onChange={e => setCategoryId(e.target.value)}
+                  className="w-full font-semibold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 h-[52px]"
+                >
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Carteira</label>
+                <select 
+                  value={walletId}
+                  onChange={e => setWalletId(e.target.value)}
+                  className="w-full font-semibold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 h-[52px]"
+                >
+                  {wallets.map(w => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Atribuição</label>
+              <div className="grid grid-cols-3 gap-2">
+                {attributions.map(a => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => setAttributionId(a.id)}
+                    className={`p-3 rounded-xl border transition-all flex items-center justify-center gap-2 text-center ${
+                      attributionId === a.id 
+                        ? 'border-blue-600 bg-blue-600/10 text-blue-400 font-bold' 
+                        : 'border-slate-800 text-slate-500 hover:border-slate-700'
+                    }`}
+                  >
+                    <User size={14} />
+                    <span className="text-[10px] font-black uppercase">{a.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t border-slate-800 flex flex-col gap-3">
+            <button 
+              type="submit"
+              className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-900/20 hover:bg-blue-700 transition-all active:scale-95"
+            >
+              Salvar em Todas as Parcelas
+            </button>
+            <button 
+              type="button"
+              onClick={handleDeleteGroup}
+              className="w-full bg-rose-500/10 text-rose-500 py-3 rounded-2xl font-bold hover:bg-rose-500/20 transition-all text-sm"
+            >
+              Excluir Todo o Grupo
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </div>
   );
 }
 
