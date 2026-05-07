@@ -63,10 +63,22 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
         const parsedAttributions = savedAttributions ? JSON.parse(savedAttributions) : INITIAL_ATTRIBUTIONS;
         
-        // Migrate "Josi" to "Grasi" if found in attributions
-        const migratedAttributions = (parsedAttributions as Attribution[]).map(a => 
+        // Ensure required attributions exist and handle migrations
+        let migratedAttributions = (parsedAttributions as Attribution[]).map(a => 
           a.name === 'Josi' ? { ...a, name: 'Grasi' } : a
         );
+
+        const requiredAttributions = [
+          { name: 'Casal', id: 'attr-1' },
+          { name: 'Fabio', id: 'attr-2' },
+          { name: 'Grasi', id: 'attr-3' }
+        ];
+
+        requiredAttributions.forEach(req => {
+          if (!migratedAttributions.find(a => a.name === req.name)) {
+            migratedAttributions.push(req);
+          }
+        });
 
         const parsedTransactions = savedTransactions ? JSON.parse(savedTransactions) : [];
         // Migrate legacy transactions

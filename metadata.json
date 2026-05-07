@@ -1,6 +1,5 @@
 {
-  "name": "Finantech - Personal Finance",
-  "description": "A comprehensive personal finance manager for tracking expenses, budgets, and wallets.",
-  "requestFramePermissions": [],
-  "majorCapabilities": []
+  "name": "Finantech",
+  "description": "Controle de despesas pessoais, planejamentos e carteiras.",
+  "requestFramePermissions": []
 }

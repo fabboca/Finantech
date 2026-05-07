@@ -299,10 +299,10 @@ export default function FinanceDashboard() {
     { id: 'transactions', label: 'Transações', icon: <Calendar size={20} /> },
     { id: 'wallets', label: 'Carteiras', icon: <CreditCard size={20} /> },
     { id: 'categories', label: 'Categorias', icon: <Plus size={20} /> },
+    { id: 'management', label: 'Gestão de Categorias', icon: <Search size={20} /> },
     { id: 'budgets', label: 'Metas', icon: <TrendingDown size={20} /> },
     { id: 'installments', label: 'Parcelamentos', icon: <Banknote size={20} /> },
     { id: 'attributions', label: 'Atribuições', icon: <User size={20} /> },
-    { id: 'management', label: 'Gestão de Categorias', icon: <Search size={20} /> },
     { id: 'reports', label: 'Relatórios', icon: <TrendingUp size={20} /> },
   ];
 
@@ -1875,19 +1875,8 @@ function GroupEditModal({ group, onClose }: { group: any, onClose: () => void })
   };
 
   const handleDeleteGroup = () => {
-    const unpaidItems = group.items.filter((item: any) => !item.isPaid);
-    
-    if (unpaidItems.length === 0) {
-      alert('Todas as parcelas deste grupo já estão pagas e não podem ser excluídas por aqui.');
-      return;
-    }
-
-    const message = unpaidItems.length === group.items.length 
-      ? 'Tem certeza que deseja excluir TODO o grupo de parcelas?' 
-      : `Tem certeza que deseja excluir as ${unpaidItems.length} parcelas pendentes deste grupo? (As ${group.items.length - unpaidItems.length} parcelas já pagas serão mantidas)`;
-
-    if (confirm(message)) {
-      unpaidItems.forEach((item: any) => deleteTransaction(item.id));
+    if (confirm('Tem certeza que deseja excluir TODO o grupo de parcelas? Esta ação não pode ser desfeita.')) {
+      group.items.forEach((item: any) => deleteTransaction(item.id));
       onClose();
     }
   };
