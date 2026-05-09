@@ -51,6 +51,7 @@ export interface Transaction {
   installmentNumber?: number;
   totalInstallments?: number;
   expectedAmount?: number; // Para recorrente variável ou contínuo
+  fixedAccountId?: string; // Para identificar transações geradas de contas fixas
 }
 
 export interface Budget {
@@ -58,6 +59,17 @@ export interface Budget {
   categoryId: string;
   amount: number;
   month: string; // YYYY-MM
+}
+
+export interface FixedAccount {
+  id: string;
+  name: string;
+  amount: number;
+  day: number;
+  categoryId: string;
+  walletId: string;
+  nature: TransactionNature;
+  attributionId?: string;
 }
 
 export const INITIAL_CATEGORIES: Category[] = [

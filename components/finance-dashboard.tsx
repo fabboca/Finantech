@@ -143,8 +143,8 @@ const TransactionItem = ({ transaction, onPay, onClick }: { transaction: any, on
 };
 
 export default function FinanceDashboard() {
-  const { wallets, transactions, budgets, categories, attributions, addTransaction, payTransaction, deleteTransaction, updateWallet, updateBudget } = useFinance();
-  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'wallets' | 'categories' | 'budgets' | 'reports' | 'management' | 'attributions' | 'installments'>('overview');
+  const { wallets, transactions, budgets, categories, attributions, fixedAccounts, addTransaction, payTransaction, deleteTransaction, updateWallet, updateBudget, generateFixedTransactions } = useFinance();
+  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'wallets' | 'categories' | 'budgets' | 'reports' | 'management' | 'attributions' | 'installments' | 'fixed_accounts'>('overview');
   const [showAddForm, setShowAddForm] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
@@ -158,7 +158,10 @@ export default function FinanceDashboard() {
   const [selectedCategory, setSelectedCategory] = useState<any>(null);
   const [selectedAttribution, setSelectedAttribution] = useState<any>(null);
   const [selectedGroup, setSelectedGroup] = useState<any>(null);
+  const [selectedFixedAccount, setSelectedFixedAccount] = useState<any>(null);
   const [showGroupEdit, setShowGroupEdit] = useState(false);
+  const [showFixedAccountForm, setShowFixedAccountForm] = useState(false);
+  const [showGenerateFixedModal, setShowGenerateFixedModal] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [mounted, setMounted] = React.useState(false);
 
@@ -303,6 +306,7 @@ export default function FinanceDashboard() {
     { id: 'budgets', label: 'Metas', icon: <TrendingDown size={20} /> },
     { id: 'installments', label: 'Parcelamentos', icon: <Banknote size={20} /> },
     { id: 'attributions', label: 'Atribuições', icon: <User size={20} /> },
+    { id: 'fixed_accounts', label: 'Contas Fixas', icon: <Calendar size={20} /> },
     { id: 'reports', label: 'Relatórios', icon: <TrendingUp size={20} /> },
   ];
 
@@ -1011,12 +1015,127 @@ export default function FinanceDashboard() {
                 </div>
               )}
 
+              {activeTab === 'fixed_accounts' && (
+                <div className="space-y-6">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                      <h2 className="text-2xl font-black tracking-tight text-slate-100">Contas Fixas</h2>
+                      <p className="text-slate-500 text-sm font-bold">Gerencie os compromissos recorrentes mensais</p>
+                    </div>
+                    <div className="flex gap-2 w-full md:w-auto">
+                      <button 
+                        onClick={() => {
+                          setShowGenerateFixedModal(true);
+                        }}
+                        className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600/10 text-emerald-500 px-4 py-3 rounded-2xl text-sm font-bold border border-emerald-600/20 hover:bg-emerald-600/20 transition-all"
+                      >
+                        <CheckCircle size={18} /> Gerar no Mês
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setSelectedFixedAccount(null);
+                          setShowFixedAccountForm(true);
+                        }}
+                        className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-4 rounded-2xl text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-900/20 transition-all active:scale-95"
+                      >
+                        <Plus size={20} /> Nova Conta Fixa
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {fixedAccounts.length === 0 ? (
+                      <div className="col-span-full py-20 text-center bg-slate-800/20 rounded-3xl border border-dashed border-slate-700">
+                        <Calendar className="mx-auto text-slate-700 mb-4" size={48} />
+                        <p className="text-slate-500 font-bold">Nenhuma conta fixa cadastrada ainda.</p>
+                        <button 
+                           onClick={() => {
+                             setSelectedFixedAccount(null);
+                             setShowFixedAccountForm(true);
+                           }}
+                           className="mt-4 text-blue-500 text-sm font-bold hover:underline"
+                        >
+                          Clique para cadastrar a primeira
+                        </button>
+                      </div>
+                    ) : (
+                      fixedAccounts.map(account => {
+                        const category = categories.find(c => c.id === account.categoryId);
+                        const wallet = wallets.find(w => w.id === account.walletId);
+                        const attribution = attributions.find(a => a.id === account.attributionId);
+                        
+                        return (
+                          <Card 
+                            key={account.id} 
+                            className="bg-slate-800/20 border border-slate-700/50 hover:border-blue-500/30 transition-all group cursor-pointer p-5"
+                            onClick={() => {
+                              setSelectedFixedAccount(account);
+                              setShowFixedAccountForm(true);
+                            }}
+                          >
+                            <div className="flex justify-between items-start mb-4">
+                              <div 
+                                className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black" 
+                                style={{ backgroundColor: category?.color || '#3b82f6' }}
+                              >
+                                {category?.name?.[0] || 'F'}
+                              </div>
+                              <div className="text-right">
+                                <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-lg ${account.nature === 'INCOME' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                                  {account.nature === 'INCOME' ? 'Receita' : 'Despesa'}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-1">
+                              <h3 className="text-lg font-black text-slate-100 group-hover:text-blue-400 transition-colors truncate">{account.name}</h3>
+                              <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                                <span className="flex items-center gap-1"><Calendar size={12}/> Dia {account.day}</span>
+                                <span>•</span>
+                                <span>{category?.name}</span>
+                              </div>
+                            </div>
+                            
+                            <div className="mt-6 flex items-end justify-between">
+                              <div className="text-slate-400 text-[10px] font-bold uppercase space-y-1">
+                                <div className="flex items-center gap-1">
+                                  <WalletIcon size={12} /> {wallet?.name}
+                                </div>
+                                {attribution && (
+                                  <div className="flex items-center gap-1">
+                                    <User size={12} /> {attribution.name}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="text-xl font-black text-slate-100">
+                                {formatCurrency(account.amount)}
+                              </div>
+                            </div>
+                          </Card>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
               {activeTab === 'overview' && (
                 <div className="space-y-8">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
-                      <h2 className="text-2xl font-bold tracking-tight text-slate-100">Visão Geral</h2>
-                      <p className="text-slate-400 text-sm font-bold">Resumo geral das suas finanças</p>
+                      <h2 className="text-2xl font-black tracking-tight text-slate-100">Visão Geral</h2>
+                      <div className="flex items-center gap-2 text-slate-500 text-sm font-bold">
+                        <span>Resumo financeiro e indicadores principais</span>
+                        <button 
+                          onClick={() => {
+                            setShowGenerateFixedModal(true);
+                          }}
+                          className="flex items-center gap-1 text-emerald-500 hover:text-emerald-400 transition-colors bg-emerald-500/5 px-2 py-0.5 rounded-lg border border-emerald-500/10 ml-2"
+                          title="Gerar Contas Fixas para este mês"
+                        >
+                          <Calendar size={14} /> <span className="text-[10px] uppercase">Gerar Fixas</span>
+                        </button>
+                      </div>
                     </div>
                     <button 
                       onClick={() => {
@@ -1689,6 +1808,18 @@ export default function FinanceDashboard() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {showFixedAccountForm && (
+          <FixedAccountForm account={selectedFixedAccount} onClose={() => setShowFixedAccountForm(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showGenerateFixedModal && (
+          <GenerateFixedTransactionsModal onClose={() => setShowGenerateFixedModal(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {showAttributionForm && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAttributionForm(false)} />
@@ -1852,7 +1983,7 @@ function AttributionForm({ attribution, onClose }: { attribution?: any, onClose:
 
 // Group Edit Modal
 function GroupEditModal({ group, onClose }: { group: any, onClose: () => void }) {
-  const { categories, wallets, attributions, updateTransactionGroup, deleteTransaction } = useFinance();
+  const { categories, wallets, attributions, updateTransactionGroup, deleteTransactionGroup } = useFinance();
   
   const [description, setDescription] = useState(group.description || '');
   const [amount, setAmount] = useState(group.items[0]?.amount?.toString() || '');
@@ -1860,6 +1991,7 @@ function GroupEditModal({ group, onClose }: { group: any, onClose: () => void })
   const [categoryId, setCategoryId] = useState(group.categoryId || (categories.length > 0 ? categories[0].id : ''));
   const [attributionId, setAttributionId] = useState(group.attributionId || (attributions.length > 0 ? attributions[0].id : ''));
   const [nature, setNature] = useState(group.nature || 'EXPENSE');
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1874,11 +2006,20 @@ function GroupEditModal({ group, onClose }: { group: any, onClose: () => void })
     onClose();
   };
 
-  const handleDeleteGroup = () => {
-    if (confirm('Tem certeza que deseja excluir TODO o grupo de parcelas? Esta ação não pode ser desfeita.')) {
-      group.items.forEach((item: any) => deleteTransaction(item.id));
-      onClose();
+  const unpaidItems = group.items?.filter((item: any) => !item.isPaid) || [];
+  const unpaidCount = unpaidItems.length;
+  const paidCount = (group.items?.length || group.count) - unpaidCount;
+
+  const handleConfirmDelete = () => {
+    if (!group || !group.id) return;
+    
+    if (unpaidCount === 0) {
+      alert('Não há parcelas pendentes para excluir neste grupo.');
+      return;
     }
+
+    deleteTransactionGroup(group.id, true);
+    onClose();
   };
 
   return (
@@ -1999,19 +2140,308 @@ function GroupEditModal({ group, onClose }: { group: any, onClose: () => void })
           </div>
 
           <div className="pt-6 border-t border-slate-800 flex flex-col gap-3">
+            {!showConfirmDelete ? (
+              <>
+                <button 
+                  type="submit"
+                  className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-900/20 hover:bg-blue-700 transition-all active:scale-95"
+                >
+                  Salvar em Todas as Parcelas
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowConfirmDelete(true)}
+                  disabled={unpaidCount === 0}
+                  className={`w-full py-3 rounded-2xl font-bold transition-all text-sm ${
+                    unpaidCount === 0 
+                      ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
+                      : 'bg-rose-500/10 text-rose-500 hover:bg-rose-500/20'
+                  }`}
+                >
+                  {unpaidCount === 0 ? 'Nenhuma Parcela para Excluir' : 'Excluir Todo o Grupo'}
+                </button>
+              </>
+            ) : (
+              <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl space-y-3">
+                <p className="text-sm font-bold text-rose-500 text-center">
+                  {paidCount === 0 
+                    ? 'Tem certeza que deseja excluir TODO este grupo?' 
+                    : `Excluir as ${unpaidCount} parcelas pendentes? As ${paidCount} já pagas serão mantidas.`
+                  }
+                </p>
+                <div className="flex gap-2">
+                  <button 
+                    type="button"
+                    onClick={handleConfirmDelete}
+                    className="flex-1 bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition-all text-sm"
+                  >
+                    Sim, Excluir
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setShowConfirmDelete(false)}
+                    className="flex-1 bg-slate-800 text-slate-300 py-3 rounded-xl font-bold hover:bg-slate-700 transition-all text-sm"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </form>
+      </motion.div>
+    </div>
+  );
+}
+
+function GenerateFixedTransactionsModal({ onClose }: { onClose: () => void }) {
+  const { generateFixedTransactions } = useFinance();
+  const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
+
+  const handleGenerate = () => {
+    generateFixedTransactions(selectedMonth);
+    alert(`Contas fixas geradas para o mês ${selectedMonth}`);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[120] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-[#1a2333] border border-slate-800 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-black text-slate-100">Gerar Contas Fixas</h2>
+            <p className="text-xs font-bold text-slate-500 uppercase mt-1">Selecione o mês desejado</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-8 space-y-6">
+          <div className="space-y-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-black text-slate-500 uppercase tracking-widest">Mês / Ano</label>
+              <input 
+                type="month" 
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="w-full bg-[#0f172a] border border-slate-800 rounded-2xl px-6 py-4 text-lg font-black text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex gap-3">
+            <AlertCircle className="text-amber-500 shrink-0" size={20} />
+            <p className="text-xs font-medium text-amber-200/70 leading-relaxed">
+              Isso criará automaticamente lançamentos de despesa e receita baseados nas suas <span className="font-bold text-amber-400">Contas Fixas</span> para o mês selecionado.
+            </p>
+          </div>
+
+          <div className="flex gap-3">
+             <button 
+              onClick={onClose}
+              className="flex-1 bg-slate-800 text-slate-300 py-4 rounded-2xl font-bold hover:bg-slate-700 transition-all"
+            >
+              Cancelar
+            </button>
             <button 
+              onClick={handleGenerate}
+              className="flex-1 bg-emerald-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-900/20 hover:bg-emerald-700 transition-all active:scale-95 flex items-center justify-center gap-2"
+            >
+              <CheckCircle size={20} /> Gerar Agora
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function FixedAccountForm({ account, onClose }: { account?: any, onClose: () => void }) {
+  const { categories, wallets, attributions, addFixedAccount, updateFixedAccount, deleteFixedAccount } = useFinance();
+  
+  const [name, setName] = useState(account?.name || '');
+  const [amount, setAmount] = useState(account?.amount?.toString() || '');
+  const [day, setDay] = useState(account?.day?.toString() || '1');
+  const [categoryId, setCategoryId] = useState(account?.categoryId || (categories.length > 0 ? categories[0].id : ''));
+  const [walletId, setWalletId] = useState(account?.walletId || (wallets.length > 0 ? wallets[0].id : ''));
+  const [nature, setNature] = useState(account?.nature || 'EXPENSE');
+  const [attributionId, setAttributionId] = useState(account?.attributionId || 'attr-1');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const data = {
+      name,
+      amount: parseFloat(amount),
+      day: parseInt(day),
+      categoryId,
+      walletId,
+      nature,
+      attributionId
+    };
+
+    if (account) {
+      updateFixedAccount(account.id, data);
+    } else {
+      addFixedAccount(data);
+    }
+    onClose();
+  };
+
+  const handleDelete = () => {
+    if (account && window.confirm('Tem certeza que deseja excluir esta conta fixa?')) {
+      deleteFixedAccount(account.id);
+      onClose();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[110] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-[#1a2333] border border-slate-800 rounded-3xl w-full max-w-xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+      >
+        <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-900/50">
+          <div>
+            <h2 className="text-xl font-black text-slate-100">
+              {account ? 'Editar Conta Fixa' : 'Nova Conta Fixa'}
+            </h2>
+            <p className="text-xs font-bold text-slate-500 uppercase mt-1">Transações geradas automaticamente todo mês</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-800 rounded-full text-slate-400">
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Nome da Conta</label>
+              <input 
+                required 
+                type="text" 
+                value={name}
+                onChange={e => setName(e.target.value)}
+                className="w-full text-lg font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 shadow-inner"
+                placeholder="Ex: Internet, Aluguel, Spotify..."
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Valor Mensal</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-black">R$</span>
+                  <input 
+                    required 
+                    type="number"
+                    step="0.01"
+                    value={amount}
+                    onChange={e => setAmount(e.target.value)}
+                    className="w-full text-lg font-black bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl pl-12 pr-4 py-3 outline-none text-slate-100"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Natureza</label>
+                <div className="flex bg-[#0f172a] p-1 rounded-xl border border-slate-800">
+                  <button 
+                    type="button"
+                    onClick={() => setNature('EXPENSE')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${nature === 'EXPENSE' ? 'bg-rose-500 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    DESPESA
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setNature('INCOME')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${nature === 'INCOME' ? 'bg-emerald-500 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    RECEITA
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Dia de Vencimento</label>
+                <input 
+                  required 
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={day}
+                  onChange={e => setDay(e.target.value)}
+                  className="w-full text-lg font-bold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 shadow-inner"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Atribuição</label>
+                <select 
+                  value={attributionId}
+                  onChange={e => setAttributionId(e.target.value)}
+                  className="w-full font-semibold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 h-[52px]"
+                >
+                  {attributions.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Categoria</label>
+                <select 
+                  value={categoryId}
+                  onChange={e => setCategoryId(e.target.value)}
+                  className="w-full font-semibold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 h-[52px]"
+                >
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Carteira Principal</label>
+                <select 
+                  value={walletId}
+                  onChange={e => setWalletId(e.target.value)}
+                  className="w-full font-semibold bg-[#0f172a] border-slate-800 focus:ring-2 focus:ring-blue-500 rounded-xl px-4 py-3 outline-none text-slate-100 h-[52px]"
+                >
+                  {wallets.map(w => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-6 border-t border-slate-800 flex flex-col gap-3">
+             <button 
               type="submit"
               className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold shadow-lg shadow-blue-900/20 hover:bg-blue-700 transition-all active:scale-95"
             >
-              Salvar em Todas as Parcelas
+              {account ? 'Salvar Alterações' : 'Criar Conta Fixa'}
             </button>
-            <button 
-              type="button"
-              onClick={handleDeleteGroup}
-              className="w-full bg-rose-500/10 text-rose-500 py-3 rounded-2xl font-bold hover:bg-rose-500/20 transition-all text-sm"
-            >
-              Excluir Todo o Grupo
-            </button>
+            {account && (
+              <button 
+                type="button"
+                onClick={handleDelete}
+                className="w-full bg-rose-500/10 text-rose-500 py-3 rounded-2xl font-bold hover:bg-rose-500/20 transition-all text-sm"
+              >
+                Excluir Conta Fixa
+              </button>
+            )}
           </div>
         </form>
       </motion.div>

@@ -12,7 +12,8 @@ import {
   INITIAL_WALLETS, 
   INITIAL_CATEGORIES,
   INITIAL_ATTRIBUTIONS,
-  TransactionType
+  TransactionType,
+  FixedAccount
 } from '../lib/types';
 
 interface FinanceContextType {
@@ -21,9 +22,11 @@ interface FinanceContextType {
   attributions: Attribution[];
   transactions: Transaction[];
   budgets: Budget[];
+  fixedAccounts: FixedAccount[];
   addTransaction: (data: Partial<Transaction> & { installments?: number }) => void;
   transferFunds: (data: { fromWalletId: string, toWalletId: string, amount: number, date: string, dueDate?: string, description: string }) => void;
   updateTransaction: (id: string, data: Partial<Transaction>) => void;
+  deleteTransactionGroup: (groupId: string, onlyUnpaid?: boolean) => void;
   deleteTransaction: (id: string) => void;
   updateTransactionGroup: (groupId: string, data: Partial<Transaction>) => void;
   payTransaction: (id: string, paidAmount?: number) => void;
@@ -38,6 +41,10 @@ interface FinanceContextType {
   deleteAttribution: (id: string) => void;
   updateBudget: (categoryId: string, amount: number, month: string) => void;
   copyBudget: (fromMonth: string, targetMonths: string[]) => void;
+  addFixedAccount: (account: Omit<FixedAccount, 'id'>) => void;
+  updateFixedAccount: (id: string, data: Partial<FixedAccount>) => void;
+  deleteFixedAccount: (id: string) => void;
+  generateFixedTransactions: (month: string) => void;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -48,6 +55,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [attributions, setAttributions] = useState<Attribution[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [fixedAccounts, setFixedAccounts] = useState<FixedAccount[]>([]);
 
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -60,6 +68,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         const savedAttributions = localStorage.getItem('finantech_attributions');
         const savedTransactions = localStorage.getItem('finantech_transactions');
         const savedBudgets = localStorage.getItem('finantech_budgets');
+        const savedFixedAccounts = localStorage.getItem('finantech_fixed_accounts');
 
         const parsedAttributions = savedAttributions ? JSON.parse(savedAttributions) : INITIAL_ATTRIBUTIONS;
         
@@ -93,6 +102,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         setAttributions(migratedAttributions);
         setTransactions(migratedTransactions);
         setBudgets(savedBudgets ? JSON.parse(savedBudgets) : []);
+        setFixedAccounts(savedFixedAccounts ? JSON.parse(savedFixedAccounts) : []);
       } catch (e) {
         console.error('Error loading data from localStorage', e);
         setWalletsState(INITIAL_WALLETS);
@@ -141,6 +151,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('finantech_attributions', JSON.stringify(attributions));
       localStorage.setItem('finantech_transactions', JSON.stringify(transactions));
       localStorage.setItem('finantech_budgets', JSON.stringify(budgets));
+      localStorage.setItem('finantech_fixed_accounts', JSON.stringify(fixedAccounts));
     } catch (e) {
       console.error('Error saving data to localStorage', e);
     }
@@ -255,6 +266,40 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const deleteTransactionGroup = useCallback((groupId: string, onlyUnpaid: boolean = false) => {
+    if (!groupId) return;
+    
+    setTransactions(currentTransactions => {
+      // Find transactions to remove
+      const toRemove = currentTransactions.filter(t => {
+        const matchesGroup = t.groupId === groupId;
+        if (!matchesGroup) return false;
+        
+        // If we only want to delete unpaid ones, check if it's paid
+        if (onlyUnpaid && t.isPaid) return false;
+        
+        return true;
+      });
+
+      if (toRemove.length === 0) return currentTransactions;
+
+      const idsToRemove = new Set(toRemove.map(t => t.id));
+      
+      // Also handle associated transfers if any (though installments usually aren't)
+      const transferIdsToRemove = new Set(
+        toRemove
+          .filter(t => t.transferId)
+          .map(t => t.transferId as string)
+      );
+
+      return currentTransactions.filter(t => {
+        if (idsToRemove.has(t.id)) return false;
+        if (t.transferId && transferIdsToRemove.has(t.transferId)) return false;
+        return true;
+      });
+    });
+  }, []);
+
   const updateTransactionGroup = useCallback((groupId: string, data: Partial<Transaction>) => {
     setTransactions(prev => prev.map(t => {
       if (t.groupId === groupId) {
@@ -348,6 +393,58 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const addFixedAccount = useCallback((account: Omit<FixedAccount, 'id'>) => {
+    setFixedAccounts(prev => [...prev, { ...account, id: uuidv4() }]);
+  }, []);
+
+  const updateFixedAccount = useCallback((id: string, data: Partial<FixedAccount>) => {
+    setFixedAccounts(prev => prev.map(a => a.id === id ? { ...a, ...data } : a));
+  }, []);
+
+  const deleteFixedAccount = useCallback((id: string) => {
+    setFixedAccounts(prev => prev.filter(a => a.id !== id));
+  }, []);
+
+  const generateFixedTransactions = useCallback((monthYear: string) => {
+    // monthYear is expected as YYYY-MM
+    setTransactions(prevTransactions => {
+      const newTransactions: Transaction[] = [];
+      const [year, month] = monthYear.split('-').map(Number);
+      
+      fixedAccounts.forEach(account => {
+        // Build the date for the month
+        // Ensure the day is valid for that month
+        const lastDayOfMonth = new Date(year, month, 0).getDate();
+        const targetDay = Math.min(account.day, lastDayOfMonth);
+        const dateStr = `${monthYear}-${String(targetDay).padStart(2, '0')}T12:00:00Z`;
+        
+        // Check if already generated for this account in this month
+        const alreadyExists = prevTransactions.some(t => 
+          t.fixedAccountId === account.id && t.date.startsWith(monthYear)
+        );
+
+        if (!alreadyExists) {
+          newTransactions.push({
+            id: uuidv4(),
+            walletId: account.walletId,
+            categoryId: account.categoryId,
+            description: account.name,
+            amount: account.amount,
+            date: dateStr,
+            isPaid: false,
+            type: 'SINGLE',
+            nature: account.nature,
+            attributionId: account.attributionId,
+            fixedAccountId: account.id
+          });
+        }
+      });
+
+      if (newTransactions.length === 0) return prevTransactions;
+      return [...prevTransactions, ...newTransactions];
+    });
+  }, [fixedAccounts]);
+
   return (
     <FinanceContext.Provider value={{
       wallets,
@@ -355,9 +452,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       attributions,
       transactions,
       budgets,
+      fixedAccounts,
       addTransaction,
       updateTransaction,
       updateTransactionGroup,
+      deleteTransactionGroup,
       deleteTransaction,
       payTransaction,
       transferFunds,
@@ -371,7 +470,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       updateAttribution,
       deleteAttribution,
       updateBudget,
-      copyBudget
+      copyBudget,
+      addFixedAccount,
+      updateFixedAccount,
+      deleteFixedAccount,
+      generateFixedTransactions
     }}>
       {children}
     </FinanceContext.Provider>
