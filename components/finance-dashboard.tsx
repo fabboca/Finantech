@@ -182,6 +182,7 @@ export default function FinanceDashboard() {
   const [mgmtFilterAttribution, setMgmtFilterAttribution] = useState('ALL');
   const [mgmtFilterWallet, setMgmtFilterWallet] = useState('ALL');
   const [hideTransfers, setHideTransfers] = useState(true);
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'PAID' | 'PENDING'>('ALL');
 
   // Filtering Logic
   const filteredTransactions = useMemo(() => {
@@ -201,10 +202,12 @@ export default function FinanceDashboard() {
         const matchesCategory = filterCategory === 'ALL' || t.categoryId === filterCategory;
         const matchesSearch = !searchTerm || t.description.toLowerCase().includes(searchTerm.toLowerCase());
         
+        const matchesStatus = filterStatus === 'ALL' || (filterStatus === 'PAID' ? t.isPaid : !t.isPaid);
+        
         const isTransfer = t.nature === 'TRANSFER' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER_IN';
         const matchesHideTransfers = !hideTransfers || !isTransfer;
         
-        return matchesMonth && matchesEventMonth && matchesWallet && matchesCategory && matchesSearch && matchesHideTransfers;
+        return matchesMonth && matchesEventMonth && matchesWallet && matchesCategory && matchesSearch && matchesHideTransfers && matchesStatus;
       } catch (e) {
         console.error('Error filtering transaction:', e);
         return false;
@@ -214,7 +217,7 @@ export default function FinanceDashboard() {
       const dateB = new Date(b.dueDate || b.date).getTime();
       return dateB - dateA;
     });
-  }, [transactions, filterMonth, filterEventMonth, filterWallet, filterCategory, searchTerm, hideTransfers]);
+  }, [transactions, filterMonth, filterEventMonth, filterWallet, filterCategory, searchTerm, hideTransfers, filterStatus]);
 
   // Totalizer for Filtered Transactions
   const filteredMetrics = useMemo(() => {
@@ -1397,7 +1400,20 @@ export default function FinanceDashboard() {
                         </select>
                       </div>
 
-                      {(filterMonth !== format(new Date(), 'yyyy-MM') || filterEventMonth !== 'ALL' || filterWallet !== 'ALL' || filterCategory !== 'ALL' || searchTerm || hideTransfers) && (
+                      <div className="flex items-center gap-2 bg-[#1e293b] border border-slate-800 px-3 py-2 rounded-xl">
+                        <span className="text-[10px] font-bold text-emerald-500 uppercase">Status</span>
+                        <select 
+                          value={filterStatus}
+                          onChange={e => setFilterStatus(e.target.value as any)}
+                          className="bg-transparent text-sm font-semibold outline-none text-slate-300"
+                        >
+                          <option value="ALL">Todo Status</option>
+                          <option value="PAID">Pago</option>
+                          <option value="PENDING">Pendente</option>
+                        </select>
+                      </div>
+
+                      {(filterMonth !== format(new Date(), 'yyyy-MM') || filterEventMonth !== 'ALL' || filterWallet !== 'ALL' || filterCategory !== 'ALL' || searchTerm || hideTransfers || filterStatus !== 'ALL') && (
                         <button 
                           onClick={() => {
                             setFilterMonth(format(new Date(), 'yyyy-MM'));
@@ -1406,6 +1422,7 @@ export default function FinanceDashboard() {
                             setFilterCategory('ALL');
                             setSearchTerm('');
                             setHideTransfers(false);
+                            setFilterStatus('ALL');
                           }}
                           className="text-xs font-bold text-slate-500 hover:text-slate-300 transition-colors"
                         >
