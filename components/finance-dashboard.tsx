@@ -177,7 +177,7 @@ export default function FinanceDashboard() {
   const [filterWallet, setFilterWallet] = useState('ALL');
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
-  const [mgmtSortBy, setMgmtSortBy] = useState<'name' | 'budget' | 'realized'>('name');
+  const [mgmtSortBy, setMgmtSortBy] = useState<'name' | 'budget' | 'realized'>('realized');
   const [mgmtViewMode, setMgmtViewMode] = useState<'CATEGORIES' | 'ATTRIBUTIONS'>('CATEGORIES');
   const [mgmtFilterAttribution, setMgmtFilterAttribution] = useState('ALL');
   const [mgmtFilterWallet, setMgmtFilterWallet] = useState('ALL');
@@ -585,10 +585,15 @@ export default function FinanceDashboard() {
                                   if (aHasBudget && !bHasBudget) return -1;
                                   if (!aHasBudget && bHasBudget) return 1;
   
+                                  // Then sort by mgmtSortBy (defaulting to realized volume within groups)
                                   if (mgmtSortBy === 'name') return a.name.localeCompare(b.name);
-                                  if (mgmtSortBy === 'budget') return b.budget - a.budget;
+                                  if (mgmtSortBy === 'budget') {
+                                    const diff = b.budget - a.budget;
+                                    return diff !== 0 ? diff : b.spent - a.spent;
+                                  }
                                   if (mgmtSortBy === 'realized') return b.spent - a.spent;
-                                  return 0;
+                                  
+                                  return b.spent - a.spent;
                                 });
   
                               const totalBudgeted = mgmtCategories.reduce((acc, cat) => acc + (cat.budget > 0 ? cat.budget : cat.spent), 0);
