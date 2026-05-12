@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { addMonths, format, startOfMonth } from 'date-fns';
+import { addMonths } from 'date-fns';
 import { 
   Wallet, 
   Category, 
@@ -12,9 +12,9 @@ import {
   INITIAL_WALLETS, 
   INITIAL_CATEGORIES,
   INITIAL_ATTRIBUTIONS,
-  TransactionType,
   FixedAccount
 } from '../lib/types';
+import { supabase } from '../lib/supabase';
 
 interface FinanceContextType {
   wallets: Wallet[];
@@ -59,10 +59,96 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load from localStorage on mount
+  // Load from Supabase or localStorage on mount
   useEffect(() => {
-    const frame = requestAnimationFrame(() => {
+    const fetchData = async () => {
+      console.log('Finance Initialization: Checking storage options...');
       try {
+        if (supabase) {
+          console.log('Supabase detected: Attempting to fetch data...');
+          const [
+            { data: sbWallets, error: wErr },
+            { data: sbCategories, error: cErr },
+            { data: sbAttributions, error: aErr },
+            { data: sbTransactions, error: tErr },
+            { data: sbBudgets, error: bErr },
+            { data: sbFixedAccounts, error: fErr }
+          ] = await Promise.all([
+            supabase.from('wallets').select('*'),
+            supabase.from('categories').select('*'),
+            supabase.from('attributions').select('*'),
+            supabase.from('transactions').select('*'),
+            supabase.from('budgets').select('*'),
+            supabase.from('fixed_accounts').select('*')
+          ]);
+
+          if (wErr || cErr || aErr || tErr || bErr || fErr) {
+            console.error('Supabase fetch error details:', { wErr, cErr, aErr, tErr, bErr, fErr });
+          }
+
+          if (!wErr && sbWallets && sbWallets.length > 0) {
+            console.log('Data found in Supabase. Loading into application.');
+            setWalletsState(sbWallets.map(w => ({
+              id: w.id,
+              name: w.name,
+              type: w.type,
+              initialBalance: Number(w.initial_balance),
+              balance: Number(w.initial_balance),
+              dueDay: w.due_day,
+              currentDueDate: w.current_due_date
+            })));
+            setCategories(sbCategories?.map(c => ({
+              id: c.id,
+              name: c.name,
+              color: c.color,
+              type: c.type,
+              excludeFromBudget: c.exclude_from_budget
+            })) || INITIAL_CATEGORIES);
+            setAttributions(sbAttributions?.map(a => ({ id: a.id, name: a.name })) || INITIAL_ATTRIBUTIONS);
+            setTransactions(sbTransactions?.map(t => ({
+              id: t.id,
+              walletId: t.wallet_id,
+              categoryId: t.category_id,
+              attributionId: t.attribution_id,
+              description: t.description,
+              amount: Number(t.amount),
+              date: t.date,
+              dueDate: t.due_date,
+              isPaid: t.is_paid,
+              type: t.type,
+              nature: t.nature,
+              destinationWalletId: t.destination_wallet_id,
+              transferId: t.transfer_id,
+              groupId: t.group_id,
+              installmentNumber: t.installment_number,
+              totalInstallments: t.total_installments,
+              expectedAmount: t.expected_amount ? Number(t.expected_amount) : undefined,
+              fixedAccountId: t.fixed_account_id
+            })) || []);
+            setBudgets(sbBudgets?.map(b => ({
+              id: b.id,
+              categoryId: b.category_id,
+              amount: Number(b.amount),
+              month: b.month
+            })) || []);
+            setFixedAccounts(sbFixedAccounts?.map(a => ({
+              id: a.id,
+              name: a.name,
+              amount: Number(a.amount),
+              day: a.day,
+              categoryId: a.category_id,
+              walletId: a.wallet_id,
+              nature: a.nature,
+              attributionId: a.attribution_id
+            })) || []);
+            setIsLoaded(true);
+            return;
+          } else if (supabase && (!sbWallets || sbWallets.length === 0)) {
+            console.log('Supabase is configured but wallet table is empty. Checking localStorage...');
+          }
+        }
+
+        // Fallback to localStorage
         const savedWallets = localStorage.getItem('finantech_wallets');
         const savedCategories = localStorage.getItem('finantech_categories');
         const savedAttributions = localStorage.getItem('finantech_attributions');
@@ -70,79 +156,39 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         const savedBudgets = localStorage.getItem('finantech_budgets');
         const savedFixedAccounts = localStorage.getItem('finantech_fixed_accounts');
 
-        const parsedAttributions = savedAttributions ? JSON.parse(savedAttributions) : INITIAL_ATTRIBUTIONS;
-        
-        // Ensure required attributions exist and handle migrations
-        let migratedAttributions = (parsedAttributions as Attribution[]).map(a => 
-          a.name === 'Josi' ? { ...a, name: 'Grasi' } : a
-        );
-
-        const requiredAttributions = [
-          { name: 'Casal', id: 'attr-1' },
-          { name: 'Fabio', id: 'attr-2' },
-          { name: 'Grasi', id: 'attr-3' }
-        ];
-
-        requiredAttributions.forEach(req => {
-          if (!migratedAttributions.find(a => a.name === req.name)) {
-            migratedAttributions.push(req);
-          }
-        });
-
-        const parsedTransactions = savedTransactions ? JSON.parse(savedTransactions) : [];
-        // Migrate legacy transactions
-        const migratedTransactions = parsedTransactions.map((t: any) => ({
-          ...t,
-          nature: t.nature || 'EXPENSE',
-          attributionId: t.attributionId || 'attr-1' // Default to "Casal"
-        }));
-
         setWalletsState(savedWallets ? JSON.parse(savedWallets) : INITIAL_WALLETS);
         setCategories(savedCategories ? JSON.parse(savedCategories) : INITIAL_CATEGORIES);
-        setAttributions(migratedAttributions);
-        setTransactions(migratedTransactions);
+        setAttributions(savedAttributions ? JSON.parse(savedAttributions) : INITIAL_ATTRIBUTIONS);
+        setTransactions(savedTransactions ? JSON.parse(savedTransactions) : []);
         setBudgets(savedBudgets ? JSON.parse(savedBudgets) : []);
         setFixedAccounts(savedFixedAccounts ? JSON.parse(savedFixedAccounts) : []);
       } catch (e) {
-        console.error('Error loading data from localStorage', e);
+        console.error('Error loading data', e);
         setWalletsState(INITIAL_WALLETS);
         setCategories(INITIAL_CATEGORIES);
         setAttributions(INITIAL_ATTRIBUTIONS);
       } finally {
         setIsLoaded(true);
       }
-    });
+    };
 
-    return () => cancelAnimationFrame(frame);
+    fetchData();
   }, []);
 
-  // Compute balances dynamically
   const wallets = React.useMemo(() => {
     return walletsState.map(wallet => {
       let balance = wallet.initialBalance || 0;
-      
       transactions.forEach(t => {
-        if (!t.isPaid && t.nature !== 'TRANSFER_OUT' && t.nature !== 'TRANSFER_IN' && t.nature !== 'TRANSFER') return; // Transfers are always "paid" in this system
-
+        if (!t.isPaid && !t.nature.startsWith('TRANSFER')) return;
         if (t.walletId === wallet.id) {
-          if (t.nature === 'INCOME' || t.nature === 'TRANSFER_IN') {
-            balance += t.amount;
-          } else if (t.nature === 'EXPENSE' || t.nature === 'TRANSFER_OUT' || t.nature === 'TRANSFER') {
-            balance -= t.amount;
-          }
-        }
-        
-        // Legacy support
-        if (t.nature === 'TRANSFER' && t.destinationWalletId === wallet.id) {
-          balance += t.amount;
+          if (t.nature === 'INCOME' || t.nature === 'TRANSFER_IN') balance += t.amount;
+          else balance -= t.amount;
         }
       });
-      
       return { ...wallet, balance };
     });
   }, [walletsState, transactions]);
 
-  // Save to localStorage
   useEffect(() => {
     if (!isLoaded) return;
     try {
@@ -152,329 +198,118 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('finantech_transactions', JSON.stringify(transactions));
       localStorage.setItem('finantech_budgets', JSON.stringify(budgets));
       localStorage.setItem('finantech_fixed_accounts', JSON.stringify(fixedAccounts));
+
+      const sb = supabase;
+      if (sb) {
+        const syncToSupabase = async () => {
+          try {
+            console.log('Syncing data to Supabase...');
+            const results = await Promise.all([
+              sb.from('wallets').upsert(walletsState.map(w => ({
+                id: w.id, name: w.name, type: w.type, initial_balance: w.initialBalance, due_day: w.dueDay, current_due_date: w.currentDueDate
+              }))),
+              sb.from('categories').upsert(categories.map(c => ({
+                id: c.id, name: c.name, color: c.color, type: c.type, exclude_from_budget: c.excludeFromBudget
+              }))),
+              sb.from('attributions').upsert(attributions.map(a => ({ id: a.id, name: a.name }))),
+              sb.from('transactions').upsert(transactions.map(t => ({
+                id: t.id, wallet_id: t.walletId, category_id: t.categoryId, attribution_id: t.attributionId, description: t.description, amount: t.amount, date: t.date, is_paid: t.isPaid, type: t.type, nature: t.nature, destination_wallet_id: t.destinationWalletId, transfer_id: t.transferId, group_id: t.groupId, installment_number: t.installmentNumber, total_installments: t.totalInstallments, expected_amount: t.expectedAmount, fixed_account_id: t.fixedAccountId
+              }))),
+              sb.from('budgets').upsert(budgets.map(b => ({
+                id: b.id, category_id: b.categoryId, amount: b.amount, month: b.month
+              }))),
+              sb.from('fixed_accounts').upsert(fixedAccounts.map(a => ({
+                id: a.id, name: a.name, amount: a.amount, day: a.day, category_id: a.categoryId, wallet_id: a.walletId, nature: a.nature, attribution_id: a.attributionId
+              })))
+            ]);
+            const syncErrors = results.map(r => r.error).filter(Boolean);
+            if (syncErrors.length > 0) console.error('Supabase Sync Errors:', syncErrors);
+            else console.log('Successfully synced to Supabase');
+          } catch (error) {
+            console.error('Supabase sync unexpected error:', error);
+          }
+        };
+        syncToSupabase();
+      }
     } catch (e) {
-      console.error('Error saving data to localStorage', e);
+      console.error('Error saving data', e);
     }
-  }, [walletsState, categories, attributions, transactions, budgets, isLoaded]);
+  }, [walletsState, categories, attributions, transactions, budgets, fixedAccounts, isLoaded]);
 
   const addTransaction = useCallback((data: any) => {
-    try {
-      const { type, installments = 1, amount = 0, date = new Date().toISOString(), dueDate, ...rest } = data;
-      const newTransactions: Transaction[] = [];
-      const groupId = installments > 1 ? uuidv4() : undefined;
-
-      if (type === 'INSTALLMENT') {
-        for (let i = 0; i < installments; i++) {
-          newTransactions.push({
+    const { installments = 1, ...rest } = data;
+    const newTransactions: any[] = [];
+    const groupId = installments > 1 ? uuidv4() : undefined;
+    for (let i = 0; i < installments; i++) {
+        newTransactions.push({
             id: uuidv4(),
-            type,
-            nature: rest.nature || 'EXPENSE',
-            amount: amount,
-            date: addMonths(new Date(date), i).toISOString(),
-            dueDate: dueDate ? addMonths(new Date(dueDate), i).toISOString() : undefined,
-            isPaid: false,
+            ...rest,
+            date: addMonths(new Date(rest.date || new Date()), i).toISOString(),
             groupId,
             installmentNumber: i + 1,
-            totalInstallments: installments,
-            ...rest
-          });
-        }
-      } else {
-        newTransactions.push({
-          id: uuidv4(),
-          type,
-          nature: rest.nature || 'EXPENSE',
-          amount,
-          date,
-          dueDate,
-          isPaid: rest.isPaid || false,
-          ...rest
+            totalInstallments: installments
         });
-      }
-
-      setTransactions(prev => [...prev, ...newTransactions]);
-    } catch (e) {
-      console.error('Error adding transaction', e);
     }
+    setTransactions(prev => [...prev, ...newTransactions]);
   }, []);
 
-  const transferFunds = useCallback((data: { fromWalletId: string, toWalletId: string, amount: number, date: string, dueDate?: string, description: string }) => {
-    try {
-      const { fromWalletId, toWalletId, amount, date, dueDate, description } = data;
-      const transferId = uuidv4();
-
-      const debitTransaction: Transaction = {
-        id: uuidv4(),
-        walletId: fromWalletId,
-        destinationWalletId: toWalletId,
-        categoryId: 'cat-transfer', // Special category for transfers
-        description,
-        amount,
-        date: new Date(date).toISOString(),
-        dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
-        isPaid: true,
-        type: 'SINGLE',
-        nature: 'TRANSFER_OUT',
-        transferId
-      };
-
-      const creditTransaction: Transaction = {
-        id: uuidv4(),
-        walletId: toWalletId,
-        destinationWalletId: fromWalletId,
-        categoryId: 'cat-transfer',
-        description,
-        amount,
-        date: new Date(date).toISOString(),
-        dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
-        isPaid: true,
-        type: 'SINGLE',
-        nature: 'TRANSFER_IN',
-        transferId
-      };
-
-      setTransactions(prev => [...prev, debitTransaction, creditTransaction]);
-    } catch (e) {
-      console.error('Error transferring funds', e);
-    }
+  const transferFunds = useCallback((data: any) => {
+    const transferId = uuidv4();
+    const t1 = { id: uuidv4(), walletId: data.fromWalletId, categoryId: 'cat-transfer', amount: data.amount, nature: 'TRANSFER_OUT', date: data.date, description: data.description, isPaid: true, transferId, type: 'SINGLE' };
+    const t2 = { id: uuidv4(), walletId: data.toWalletId, categoryId: 'cat-transfer', amount: data.amount, nature: 'TRANSFER_IN', date: data.date, description: data.description, isPaid: true, transferId, type: 'SINGLE' };
+    setTransactions(prev => [...prev, t1 as Transaction, t2 as Transaction]);
   }, []);
 
-  const updateTransaction = useCallback((id: string, data: Partial<Transaction>) => {
+  const updateTransaction = useCallback((id: string, data: any) => setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...data } : t)), []);
+  const deleteTransaction = useCallback((id: string) => setTransactions(prev => prev.filter(t => t.id !== id)), []);
+  const deleteTransactionGroup = useCallback((groupId: string) => setTransactions(prev => prev.filter(t => t.groupId !== groupId)), []);
+  const updateTransactionGroup = useCallback((groupId: string, data: any) => setTransactions(prev => prev.map(t => t.groupId === groupId ? { ...t, ...data } : t)), []);
+  const payTransaction = useCallback((id: string) => setTransactions(prev => prev.map(t => t.id === id ? { ...t, isPaid: true } : t)), []);
+  const addWallet = useCallback((w: any) => setWalletsState(prev => [...prev, { ...w, id: uuidv4() }]), []);
+  const updateWallet = useCallback((id: string, data: any) => setWalletsState(prev => prev.map(w => w.id === id ? { ...w, ...data } : w)), []);
+  const deleteWallet = useCallback((id: string) => setWalletsState(prev => prev.filter(w => w.id !== id)), []);
+  const addCategory = useCallback((c: any) => setCategories(prev => [...prev, { ...c, id: uuidv4() }]), []);
+  const updateCategory = useCallback((id: string, data: any) => setCategories(prev => prev.map(c => c.id === id ? { ...c, ...data } : c)), []);
+  const deleteCategory = useCallback((id: string) => setCategories(prev => prev.filter(c => c.id !== id)), []);
+  const addAttribution = useCallback((a: any) => setAttributions(prev => [...prev, { ...a, id: uuidv4() }]), []);
+  const updateAttribution = useCallback((id: string, data: any) => setAttributions(prev => prev.map(a => a.id === id ? { ...a, ...data } : a)), []);
+  const deleteAttribution = useCallback((id: string) => setAttributions(prev => prev.filter(a => a.id !== id)), []);
+  const updateBudget = useCallback((cid: string, amt: number, m: string) => setBudgets(prev => {
+    const idx = prev.findIndex(b => b.categoryId === cid && b.month === m);
+    if (idx > -1) { const u = [...prev]; u[idx] = { ...u[idx], amount: amt }; return u; }
+    return [...prev, { id: uuidv4(), categoryId: cid, amount: amt, month: m }];
+  }), []);
+  const copyBudget = useCallback((from: string, targets: string[]) => setBudgets(prev => {
+    let result = [...prev];
+    targets.forEach(t => {
+        result = result.filter(b => b.month !== t);
+        const source = prev.filter(b => b.month === from);
+        result = [...result, ...source.map(s => ({ ...s, id: uuidv4(), month: t }))];
+    });
+    return result;
+  }), []);
+  const addFixedAccount = useCallback((a: any) => setFixedAccounts(prev => [...prev, { ...a, id: uuidv4() }]), []);
+  const updateFixedAccount = useCallback((id: string, data: any) => setFixedAccounts(prev => prev.map(a => a.id === id ? { ...a, ...data } : a)), []);
+  const deleteFixedAccount = useCallback((id: string) => setFixedAccounts(prev => prev.filter(a => a.id !== id)), []);
+  const generateFixedTransactions = useCallback((my: string) => {
     setTransactions(prev => {
-      const target = prev.find(t => t.id === id);
-      if (target?.transferId) {
-        // Sync shared fields for both sides of the transfer, but keep unique ones
-        return prev.map(t => {
-          if (t.transferId === target.transferId) {
-            const { walletId, destinationWalletId, nature, id: tid, ...sharedData } = data;
-            return { ...t, ...sharedData };
-          }
-          return t;
+        const next = [...prev];
+        fixedAccounts.forEach(a => {
+            if (!prev.some(t => t.fixedAccountId === a.id && t.date.startsWith(my))) {
+                next.push({ id: uuidv4(), walletId: a.walletId, categoryId: a.categoryId, description: a.name, amount: a.amount, date: `${my}-01T12:00:00Z`, isPaid: false, type: 'SINGLE', nature: a.nature, attributionId: a.attributionId, fixedAccountId: a.id });
+            }
         });
-      }
-      return prev.map(t => t.id === id ? { ...t, ...data } : t);
-    });
-  }, []);
-
-  const deleteTransaction = useCallback((id: string) => {
-    setTransactions(prev => {
-      const target = prev.find(t => t.id === id);
-      if (target?.transferId) {
-        return prev.filter(t => t.transferId !== target.transferId);
-      }
-      return prev.filter(t => t.id !== id);
-    });
-  }, []);
-
-  const deleteTransactionGroup = useCallback((groupId: string, onlyUnpaid: boolean = false) => {
-    if (!groupId) return;
-    
-    setTransactions(currentTransactions => {
-      // Find transactions to remove
-      const toRemove = currentTransactions.filter(t => {
-        const matchesGroup = t.groupId === groupId;
-        if (!matchesGroup) return false;
-        
-        // If we only want to delete unpaid ones, check if it's paid
-        if (onlyUnpaid && t.isPaid) return false;
-        
-        return true;
-      });
-
-      if (toRemove.length === 0) return currentTransactions;
-
-      const idsToRemove = new Set(toRemove.map(t => t.id));
-      
-      // Also handle associated transfers if any (though installments usually aren't)
-      const transferIdsToRemove = new Set(
-        toRemove
-          .filter(t => t.transferId)
-          .map(t => t.transferId as string)
-      );
-
-      return currentTransactions.filter(t => {
-        if (idsToRemove.has(t.id)) return false;
-        if (t.transferId && transferIdsToRemove.has(t.transferId)) return false;
-        return true;
-      });
-    });
-  }, []);
-
-  const updateTransactionGroup = useCallback((groupId: string, data: Partial<Transaction>) => {
-    setTransactions(prev => prev.map(t => {
-      if (t.groupId === groupId) {
-        // When updating a group, we typically want to update category, description, nature, maybe amount
-        // But we must NOT update id, installmentsNumber, totalInstallments, date, etc.
-        const { id, installmentNumber, totalInstallments, date, dueDate, ...validData } = data as any;
-        return { ...t, ...validData };
-      }
-      return t;
-    }));
-  }, []);
-
-  const payTransaction = useCallback((id: string, paidAmount?: number) => {
-    setTransactions(prev => prev.map(t => {
-      if (t.id === id) {
-        const finalAmount = paidAmount !== undefined ? paidAmount : t.amount;
-        return { ...t, isPaid: true, amount: finalAmount };
-      }
-      return t;
-    }));
-  }, []);
-
-  const addWallet = useCallback((wallet: Omit<Wallet, 'id'>) => {
-    setWalletsState(prev => [...prev, { ...wallet, id: uuidv4() }]);
-  }, []);
-
-  const updateWallet = useCallback((id: string, data: Partial<Wallet>) => {
-    setWalletsState(prev => prev.map(w => w.id === id ? { ...w, ...data } : w));
-  }, []);
-
-  const deleteWallet = useCallback((id: string) => {
-    setWalletsState(prev => prev.filter(w => w.id !== id));
-  }, []);
-
-  const addCategory = useCallback((category: Omit<Category, 'id'>) => {
-    setCategories(prev => [...prev, { ...category, id: uuidv4() }]);
-  }, []);
-
-  const updateCategory = useCallback((id: string, data: Partial<Category>) => {
-    setCategories(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
-  }, []);
-
-  const deleteCategory = useCallback((id: string) => {
-    setCategories(prev => prev.filter(c => c.id !== id));
-  }, []);
-
-  const addAttribution = useCallback((attribution: Omit<Attribution, 'id'>) => {
-    setAttributions(prev => [...prev, { ...attribution, id: uuidv4() }]);
-  }, []);
-
-  const updateAttribution = useCallback((id: string, data: Partial<Attribution>) => {
-    setAttributions(prev => prev.map(a => a.id === id ? { ...a, ...data } : a));
-  }, []);
-
-  const deleteAttribution = useCallback((id: string) => {
-    setAttributions(prev => prev.filter(a => a.id !== id));
-  }, []);
-
-  const updateBudget = useCallback((categoryId: string, amount: number, month: string) => {
-    setBudgets(prev => {
-      const existingIndex = prev.findIndex(b => b.categoryId === categoryId && b.month === month);
-      if (existingIndex > -1) {
-        const updated = [...prev];
-        updated[existingIndex] = { ...updated[existingIndex], amount };
-        return updated;
-      }
-      return [...prev, { id: uuidv4(), categoryId, amount, month }];
-    });
-  }, []);
-
-  const copyBudget = useCallback((fromMonth: string, targetMonths: string[]) => {
-    setBudgets(prev => {
-      const sourceBudgets = prev.filter(b => b.month === fromMonth);
-      let newBudgets = [...prev];
-
-      targetMonths.forEach(month => {
-        // Remove existing budgets for the target month to avoid duplicates
-        newBudgets = newBudgets.filter(b => b.month !== month);
-        
-        // Copy the source budgets
-        const copied = sourceBudgets.map(b => ({
-          ...b,
-          id: uuidv4(),
-          month
-        }));
-        
-        newBudgets = [...newBudgets, ...copied];
-      });
-
-      return newBudgets;
-    });
-  }, []);
-
-  const addFixedAccount = useCallback((account: Omit<FixedAccount, 'id'>) => {
-    setFixedAccounts(prev => [...prev, { ...account, id: uuidv4() }]);
-  }, []);
-
-  const updateFixedAccount = useCallback((id: string, data: Partial<FixedAccount>) => {
-    setFixedAccounts(prev => prev.map(a => a.id === id ? { ...a, ...data } : a));
-  }, []);
-
-  const deleteFixedAccount = useCallback((id: string) => {
-    setFixedAccounts(prev => prev.filter(a => a.id !== id));
-  }, []);
-
-  const generateFixedTransactions = useCallback((monthYear: string) => {
-    // monthYear is expected as YYYY-MM
-    setTransactions(prevTransactions => {
-      const newTransactions: Transaction[] = [];
-      const [year, month] = monthYear.split('-').map(Number);
-      
-      fixedAccounts.forEach(account => {
-        // Build the date for the month
-        // Ensure the day is valid for that month
-        const lastDayOfMonth = new Date(year, month, 0).getDate();
-        const targetDay = Math.min(account.day, lastDayOfMonth);
-        const dateStr = `${monthYear}-${String(targetDay).padStart(2, '0')}T12:00:00Z`;
-        
-        // Check if already generated for this account in this month
-        const alreadyExists = prevTransactions.some(t => 
-          t.fixedAccountId === account.id && t.date.startsWith(monthYear)
-        );
-
-        if (!alreadyExists) {
-          newTransactions.push({
-            id: uuidv4(),
-            walletId: account.walletId,
-            categoryId: account.categoryId,
-            description: account.name,
-            amount: account.amount,
-            date: dateStr,
-            isPaid: false,
-            type: 'SINGLE',
-            nature: account.nature,
-            attributionId: account.attributionId,
-            fixedAccountId: account.id
-          });
-        }
-      });
-
-      if (newTransactions.length === 0) return prevTransactions;
-      return [...prevTransactions, ...newTransactions];
+        return next;
     });
   }, [fixedAccounts]);
 
   return (
     <FinanceContext.Provider value={{
-      wallets,
-      categories,
-      attributions,
-      transactions,
-      budgets,
-      fixedAccounts,
-      addTransaction,
-      updateTransaction,
-      updateTransactionGroup,
-      deleteTransactionGroup,
-      deleteTransaction,
-      payTransaction,
-      transferFunds,
-      addWallet,
-      updateWallet,
-      deleteWallet,
-      addCategory,
-      updateCategory,
-      deleteCategory,
-      addAttribution,
-      updateAttribution,
-      deleteAttribution,
-      updateBudget,
-      copyBudget,
-      addFixedAccount,
-      updateFixedAccount,
-      deleteFixedAccount,
-      generateFixedTransactions
+      wallets, categories, attributions, transactions, budgets, fixedAccounts,
+      addTransaction, updateTransaction, updateTransactionGroup, deleteTransactionGroup, deleteTransaction,
+      payTransaction, transferFunds, addWallet, updateWallet, deleteWallet,
+      addCategory, updateCategory, deleteCategory, addAttribution, updateAttribution, deleteAttribution,
+      updateBudget, copyBudget, addFixedAccount, updateFixedAccount, deleteFixedAccount, generateFixedTransactions
     }}>
       {children}
     </FinanceContext.Provider>
@@ -483,8 +318,6 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
 export function useFinance() {
   const context = useContext(FinanceContext);
-  if (context === undefined) {
-    throw new Error('useFinance must be used within a FinanceProvider');
-  }
+  if (context === undefined) throw new Error('useFinance must be used within a FinanceProvider');
   return context;
 }
