@@ -2,9 +2,10 @@
 
 import React, { useState, useMemo } from 'react';
 import { useFinance } from '@/hooks/use-finance';
+import { useAuth } from '@/components/auth-provider';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { TransactionNature, TransactionType } from '@/lib/types';
-import { Plus, Wallet as WalletIcon, CreditCard, Banknote, Calendar, CheckCircle, AlertCircle, TrendingUp, TrendingDown, PieChart, MoreVertical, Filter, Search, User, X, Menu, ChevronDown } from 'lucide-react';
+import { Plus, Wallet as WalletIcon, CreditCard, Banknote, Calendar, CheckCircle, AlertCircle, TrendingUp, TrendingDown, PieChart, MoreVertical, Filter, Search, User, X, Menu, ChevronDown, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format, isAfter, isBefore, addDays, addMonths } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart as RePieChart, Pie } from 'recharts';
@@ -144,6 +145,7 @@ const TransactionItem = ({ transaction, onPay, onClick }: { transaction: any, on
 
 export default function FinanceDashboard() {
   const { wallets, transactions, budgets, categories, attributions, fixedAccounts, addTransaction, payTransaction, deleteTransaction, updateWallet, updateBudget, generateFixedTransactions } = useFinance();
+  const { signOut, user } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'wallets' | 'categories' | 'budgets' | 'reports' | 'management' | 'attributions' | 'installments' | 'fixed_accounts'>('overview');
   const [showAddForm, setShowAddForm] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -349,7 +351,7 @@ export default function FinanceDashboard() {
           </nav>
         </div>
 
-        <div className="mt-auto p-6">
+        <div className="mt-auto p-6 space-y-4">
           <button 
             onClick={() => {
               setSelectedTransaction(null);
@@ -358,6 +360,13 @@ export default function FinanceDashboard() {
             className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-4 rounded-2xl text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-900/20 transition-all active:scale-95"
           >
             <Plus size={20} /> Novo Registro
+          </button>
+
+          <button 
+            onClick={signOut}
+            className="w-full flex items-center justify-center gap-2 bg-slate-800 text-slate-400 px-4 py-3 rounded-2xl text-sm font-bold hover:bg-slate-700 hover:text-slate-100 transition-all active:scale-95 border border-slate-700/50"
+          >
+            <LogOut size={18} /> Sair
           </button>
         </div>
       </aside>
@@ -418,6 +427,18 @@ export default function FinanceDashboard() {
                     <span className="whitespace-nowrap truncate">{item.label}</span>
                   </button>
                 ))}
+                <button
+                  onClick={() => {
+                    signOut();
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all justify-start text-left text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 col-span-2"
+                >
+                  <div className="shrink-0">
+                    <LogOut size={16} />
+                  </div>
+                  <span>Sair da Conta</span>
+                </button>
               </div>
             </motion.div>
           )}
