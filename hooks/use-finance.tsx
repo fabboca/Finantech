@@ -240,11 +240,16 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     const { installments = 1, ...rest } = data;
     const newTransactions: any[] = [];
     const groupId = installments > 1 ? uuidv4() : undefined;
+    
+    const baseDate = new Date(rest.date || new Date());
+    const baseDueDate = rest.dueDate ? new Date(rest.dueDate) : null;
+
     for (let i = 0; i < installments; i++) {
         newTransactions.push({
             id: uuidv4(),
             ...rest,
-            date: addMonths(new Date(rest.date || new Date()), i).toISOString(),
+            date: addMonths(baseDate, i).toISOString(),
+            dueDate: baseDueDate ? addMonths(baseDueDate, i).toISOString() : rest.dueDate,
             groupId,
             installmentNumber: i + 1,
             totalInstallments: installments
@@ -261,19 +266,54 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateTransaction = useCallback((id: string, data: any) => setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...data } : t)), []);
-  const deleteTransaction = useCallback((id: string) => setTransactions(prev => prev.filter(t => t.id !== id)), []);
-  const deleteTransactionGroup = useCallback((groupId: string) => setTransactions(prev => prev.filter(t => t.groupId !== groupId)), []);
+  const deleteTransaction = useCallback(async (id: string) => {
+    setTransactions(prev => prev.filter(t => t.id !== id));
+    if (supabase) {
+      await supabase.from('transactions').delete().eq('id', id);
+    }
+  }, []);
+
+  const deleteTransactionGroup = useCallback(async (groupId: string, onlyUnpaid: boolean = false) => {
+    setTransactions(prev => prev.filter(t => {
+      if (t.groupId !== groupId) return true;
+      if (onlyUnpaid) return t.isPaid; // Keep paid ones
+      return false; // Remove all
+    }));
+
+    if (supabase) {
+      let query = supabase.from('transactions').delete().eq('group_id', groupId);
+      if (onlyUnpaid) {
+        query = query.eq('is_paid', false);
+      }
+      await query;
+    }
+  }, []);
   const updateTransactionGroup = useCallback((groupId: string, data: any) => setTransactions(prev => prev.map(t => t.groupId === groupId ? { ...t, ...data } : t)), []);
   const payTransaction = useCallback((id: string) => setTransactions(prev => prev.map(t => t.id === id ? { ...t, isPaid: true } : t)), []);
   const addWallet = useCallback((w: any) => setWalletsState(prev => [...prev, { ...w, id: uuidv4() }]), []);
   const updateWallet = useCallback((id: string, data: any) => setWalletsState(prev => prev.map(w => w.id === id ? { ...w, ...data } : w)), []);
-  const deleteWallet = useCallback((id: string) => setWalletsState(prev => prev.filter(w => w.id !== id)), []);
+  const deleteWallet = useCallback(async (id: string) => {
+    setWalletsState(prev => prev.filter(w => w.id !== id));
+    if (supabase) {
+      await supabase.from('wallets').delete().eq('id', id);
+    }
+  }, []);
   const addCategory = useCallback((c: any) => setCategories(prev => [...prev, { ...c, id: uuidv4() }]), []);
   const updateCategory = useCallback((id: string, data: any) => setCategories(prev => prev.map(c => c.id === id ? { ...c, ...data } : c)), []);
-  const deleteCategory = useCallback((id: string) => setCategories(prev => prev.filter(c => c.id !== id)), []);
+  const deleteCategory = useCallback(async (id: string) => {
+    setCategories(prev => prev.filter(c => c.id !== id));
+    if (supabase) {
+      await supabase.from('categories').delete().eq('id', id);
+    }
+  }, []);
   const addAttribution = useCallback((a: any) => setAttributions(prev => [...prev, { ...a, id: uuidv4() }]), []);
   const updateAttribution = useCallback((id: string, data: any) => setAttributions(prev => prev.map(a => a.id === id ? { ...a, ...data } : a)), []);
-  const deleteAttribution = useCallback((id: string) => setAttributions(prev => prev.filter(a => a.id !== id)), []);
+  const deleteAttribution = useCallback(async (id: string) => {
+    setAttributions(prev => prev.filter(a => a.id !== id));
+    if (supabase) {
+      await supabase.from('attributions').delete().eq('id', id);
+    }
+  }, []);
   const updateBudget = useCallback((cid: string, amt: number, m: string) => setBudgets(prev => {
     const idx = prev.findIndex(b => b.categoryId === cid && b.month === m);
     if (idx > -1) { const u = [...prev]; u[idx] = { ...u[idx], amount: amt }; return u; }
@@ -290,7 +330,12 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   }), []);
   const addFixedAccount = useCallback((a: any) => setFixedAccounts(prev => [...prev, { ...a, id: uuidv4() }]), []);
   const updateFixedAccount = useCallback((id: string, data: any) => setFixedAccounts(prev => prev.map(a => a.id === id ? { ...a, ...data } : a)), []);
-  const deleteFixedAccount = useCallback((id: string) => setFixedAccounts(prev => prev.filter(a => a.id !== id)), []);
+  const deleteFixedAccount = useCallback(async (id: string) => {
+    setFixedAccounts(prev => prev.filter(a => a.id !== id));
+    if (supabase) {
+      await supabase.from('fixed_accounts').delete().eq('id', id);
+    }
+  }, []);
   const generateFixedTransactions = useCallback((my: string) => {
     setTransactions(prev => {
         const next = [...prev];

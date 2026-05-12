@@ -334,14 +334,16 @@ export default function FinanceDashboard() {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id as any)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all text-left justify-start ${
                   activeTab === item.id 
                     ? 'bg-blue-600/10 text-blue-400 border border-blue-600/20 shadow-sm' 
                     : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                 }`}
               >
-                {item.icon}
-                {item.label}
+                <div className="w-5 flex justify-center shrink-0">
+                  {item.icon}
+                </div>
+                <span className="whitespace-nowrap truncate">{item.label}</span>
               </button>
             ))}
           </nav>
@@ -404,16 +406,16 @@ export default function FinanceDashboard() {
                       setActiveTab(item.id as any);
                       setIsMobileMenuOpen(false);
                     }}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
+                    className={`flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all justify-start text-left ${
                       activeTab === item.id 
                         ? 'bg-blue-600 text-white shadow-lg' 
                         : 'text-slate-400 bg-slate-800/50 hover:bg-slate-800 hover:text-slate-200 border border-slate-700/50'
                     }`}
                   >
-                    <div className={activeTab === item.id ? 'text-white' : 'text-blue-400'}>
+                    <div className={`shrink-0 ${activeTab === item.id ? 'text-white' : 'text-blue-400'}`}>
                       {React.cloneElement(item.icon as React.ReactElement, { size: 16 } as any)}
                     </div>
-                    {item.label}
+                    <span className="whitespace-nowrap truncate">{item.label}</span>
                   </button>
                 ))}
               </div>
