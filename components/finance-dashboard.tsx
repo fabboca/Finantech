@@ -179,7 +179,7 @@ export default function FinanceDashboard() {
   const [filterWallet, setFilterWallet] = useState('ALL');
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
-  const [mgmtSortBy, setMgmtSortBy] = useState<'name' | 'budget' | 'realized'>('realized');
+  const [mgmtSortBy, setMgmtSortBy] = useState<'name' | 'budget' | 'realized'>('budget');
   const [mgmtViewMode, setMgmtViewMode] = useState<'CATEGORIES' | 'ATTRIBUTIONS'>('CATEGORIES');
   const [mgmtFilterAttribution, setMgmtFilterAttribution] = useState('ALL');
   const [mgmtFilterWallet, setMgmtFilterWallet] = useState('ALL');
