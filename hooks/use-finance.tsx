@@ -12,7 +12,8 @@ import {
   INITIAL_WALLETS, 
   INITIAL_CATEGORIES,
   INITIAL_ATTRIBUTIONS,
-  FixedAccount
+  FixedAccount,
+  ImportRule
 } from '../lib/types';
 import { supabase } from '../lib/supabase';
 
@@ -23,7 +24,9 @@ interface FinanceContextType {
   transactions: Transaction[];
   budgets: Budget[];
   fixedAccounts: FixedAccount[];
+  importRules: ImportRule[];
   addTransaction: (data: Partial<Transaction> & { installments?: number }) => void;
+  addTransactions: (dataArray: (Partial<Transaction> & { installments?: number })[]) => void;
   transferFunds: (data: { fromWalletId: string, toWalletId: string, amount: number, date: string, dueDate?: string, description: string }) => void;
   updateTransaction: (id: string, data: Partial<Transaction>) => void;
   deleteTransactionGroup: (groupId: string, onlyUnpaid?: boolean) => void;
@@ -45,6 +48,9 @@ interface FinanceContextType {
   updateFixedAccount: (id: string, data: Partial<FixedAccount>) => void;
   deleteFixedAccount: (id: string) => void;
   generateFixedTransactions: (month: string) => void;
+  addImportRule: (rule: Omit<ImportRule, 'id'>) => void;
+  updateImportRule: (id: string, data: Partial<ImportRule>) => void;
+  deleteImportRule: (id: string) => void;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -56,6 +62,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [fixedAccounts, setFixedAccounts] = useState<FixedAccount[]>([]);
+  const [importRules, setImportRules] = useState<ImportRule[]>([]);
 
   const [isLoaded, setIsLoaded] = useState(false);
 
@@ -72,18 +79,20 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
             { data: sbAttributions, error: aErr },
             { data: sbTransactions, error: tErr },
             { data: sbBudgets, error: bErr },
-            { data: sbFixedAccounts, error: fErr }
+            { data: sbFixedAccounts, error: fErr },
+            { data: sbImportRules, error: rErr }
           ] = await Promise.all([
             supabase.from('wallets').select('*'),
             supabase.from('categories').select('*'),
             supabase.from('attributions').select('*'),
             supabase.from('transactions').select('*'),
             supabase.from('budgets').select('*'),
-            supabase.from('fixed_accounts').select('*')
+            supabase.from('fixed_accounts').select('*'),
+            supabase.from('import_rules').select('*')
           ]);
 
-          if (wErr || cErr || aErr || tErr || bErr || fErr) {
-            console.error('Supabase fetch error details:', { wErr, cErr, aErr, tErr, bErr, fErr });
+          if (wErr || cErr || aErr || tErr || bErr || fErr || rErr) {
+            console.error('Supabase fetch error details:', { wErr, cErr, aErr, tErr, bErr, fErr, rErr });
           }
 
           if (!wErr && sbWallets && sbWallets.length > 0) {
@@ -141,6 +150,12 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
               nature: a.nature,
               attributionId: a.attribution_id
             })) || []);
+            setImportRules(sbImportRules?.map(r => ({
+              id: r.id,
+              pattern: r.pattern,
+              categoryId: r.category_id,
+              attributionId: r.attribution_id
+            })) || []);
             setIsLoaded(true);
             return;
           } else if (supabase && (!sbWallets || sbWallets.length === 0)) {
@@ -155,6 +170,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         const savedTransactions = localStorage.getItem('finantech_transactions');
         const savedBudgets = localStorage.getItem('finantech_budgets');
         const savedFixedAccounts = localStorage.getItem('finantech_fixed_accounts');
+        const savedImportRules = localStorage.getItem('finantech_import_rules');
 
         setWalletsState(savedWallets ? JSON.parse(savedWallets) : INITIAL_WALLETS);
         setCategories(savedCategories ? JSON.parse(savedCategories) : INITIAL_CATEGORIES);
@@ -162,6 +178,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         setTransactions(savedTransactions ? JSON.parse(savedTransactions) : []);
         setBudgets(savedBudgets ? JSON.parse(savedBudgets) : []);
         setFixedAccounts(savedFixedAccounts ? JSON.parse(savedFixedAccounts) : []);
+        setImportRules(savedImportRules ? JSON.parse(savedImportRules) : []);
       } catch (e) {
         console.error('Error loading data', e);
         setWalletsState(INITIAL_WALLETS);
@@ -198,6 +215,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('finantech_transactions', JSON.stringify(transactions));
       localStorage.setItem('finantech_budgets', JSON.stringify(budgets));
       localStorage.setItem('finantech_fixed_accounts', JSON.stringify(fixedAccounts));
+      localStorage.setItem('finantech_import_rules', JSON.stringify(importRules));
 
       const sb = supabase;
       if (sb) {
@@ -213,13 +231,16 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
               }))),
               sb.from('attributions').upsert(attributions.map(a => ({ id: a.id, name: a.name }))),
               sb.from('transactions').upsert(transactions.map(t => ({
-                id: t.id, wallet_id: t.walletId, category_id: t.categoryId, attribution_id: t.attributionId, description: t.description, amount: t.amount, date: t.date, is_paid: t.isPaid, type: t.type, nature: t.nature, destination_wallet_id: t.destinationWalletId, transfer_id: t.transferId, group_id: t.groupId, installment_number: t.installmentNumber, total_installments: t.totalInstallments, expected_amount: t.expectedAmount, fixed_account_id: t.fixedAccountId
+                id: t.id, wallet_id: t.walletId, category_id: t.categoryId, attribution_id: t.attributionId, description: t.description, amount: t.amount, date: t.date, due_date: t.dueDate, is_paid: t.isPaid, type: t.type, nature: t.nature, destination_wallet_id: t.destinationWalletId, transfer_id: t.transferId, group_id: t.groupId, installment_number: t.installmentNumber, total_installments: t.totalInstallments, expected_amount: t.expectedAmount, fixed_account_id: t.fixedAccountId
               }))),
               sb.from('budgets').upsert(budgets.map(b => ({
                 id: b.id, category_id: b.categoryId, amount: b.amount, month: b.month
               }))),
               sb.from('fixed_accounts').upsert(fixedAccounts.map(a => ({
                 id: a.id, name: a.name, amount: a.amount, day: a.day, category_id: a.categoryId, wallet_id: a.walletId, nature: a.nature, attribution_id: a.attributionId
+              }))),
+              sb.from('import_rules').upsert(importRules.map(r => ({
+                id: r.id, pattern: r.pattern, category_id: r.categoryId, attribution_id: r.attributionId
               })))
             ]);
             const syncErrors = results.map(r => r.error).filter(Boolean);
@@ -256,6 +277,32 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         });
     }
     setTransactions(prev => [...prev, ...newTransactions]);
+  }, []);
+
+  const addTransactions = useCallback((dataArray: any[]) => {
+    const allNewTransactions: any[] = [];
+    
+    dataArray.forEach(data => {
+      const { installments = 1, ...rest } = data;
+      const groupId = installments > 1 ? uuidv4() : undefined;
+      
+      const baseDate = new Date(rest.date || new Date());
+      const baseDueDate = rest.dueDate ? new Date(rest.dueDate) : null;
+
+      for (let i = 0; i < installments; i++) {
+        allNewTransactions.push({
+          id: uuidv4(),
+          ...rest,
+          date: addMonths(baseDate, i).toISOString(),
+          dueDate: baseDueDate ? addMonths(baseDueDate, i).toISOString() : rest.dueDate,
+          groupId,
+          installmentNumber: i + 1,
+          totalInstallments: installments
+        });
+      }
+    });
+
+    setTransactions(prev => [...prev, ...allNewTransactions]);
   }, []);
 
   const transferFunds = useCallback((data: any) => {
@@ -336,6 +383,16 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       await supabase.from('fixed_accounts').delete().eq('id', id);
     }
   }, []);
+
+  const addImportRule = useCallback((r: any) => setImportRules(prev => [...prev, { ...r, id: uuidv4() }]), []);
+  const updateImportRule = useCallback((id: string, data: any) => setImportRules(prev => prev.map(r => r.id === id ? { ...r, ...data } : r)), []);
+  const deleteImportRule = useCallback(async (id: string) => {
+    setImportRules(prev => prev.filter(r => r.id !== id));
+    if (supabase) {
+      await supabase.from('import_rules').delete().eq('id', id);
+    }
+  }, []);
+
   const generateFixedTransactions = useCallback((my: string) => {
     setTransactions(prev => {
         const next = [...prev];
@@ -350,11 +407,12 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <FinanceContext.Provider value={{
-      wallets, categories, attributions, transactions, budgets, fixedAccounts,
-      addTransaction, updateTransaction, updateTransactionGroup, deleteTransactionGroup, deleteTransaction,
+      wallets, categories, attributions, transactions, budgets, fixedAccounts, importRules,
+      addTransaction, addTransactions, updateTransaction, updateTransactionGroup, deleteTransactionGroup, deleteTransaction,
       payTransaction, transferFunds, addWallet, updateWallet, deleteWallet,
       addCategory, updateCategory, deleteCategory, addAttribution, updateAttribution, deleteAttribution,
-      updateBudget, copyBudget, addFixedAccount, updateFixedAccount, deleteFixedAccount, generateFixedTransactions
+      updateBudget, copyBudget, addFixedAccount, updateFixedAccount, deleteFixedAccount, generateFixedTransactions,
+      addImportRule, updateImportRule, deleteImportRule
     }}>
       {children}
     </FinanceContext.Provider>

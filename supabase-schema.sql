@@ -89,3 +89,14 @@ CREATE POLICY "Public access for attributions" ON attributions FOR ALL USING (tr
 CREATE POLICY "Public access for transactions" ON transactions FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Public access for budgets" ON budgets FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Public access for fixed_accounts" ON fixed_accounts FOR ALL USING (true) WITH CHECK (true);
+
+-- Import Rules
+CREATE TABLE import_rules (
+  id TEXT PRIMARY KEY,
+  pattern TEXT NOT NULL,
+  category_id TEXT REFERENCES categories(id) ON DELETE CASCADE,
+  attribution_id TEXT REFERENCES attributions(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+ALTER TABLE import_rules ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public access for import_rules" ON import_rules FOR ALL USING (true) WITH CHECK (true);

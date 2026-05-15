@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useFinance } from '@/hooks/use-finance';
 import { useAuth } from '@/components/auth-provider';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { TransactionNature, TransactionType } from '@/lib/types';
-import { Plus, Wallet as WalletIcon, CreditCard, Banknote, Calendar, CheckCircle, AlertCircle, TrendingUp, TrendingDown, PieChart, MoreVertical, Filter, Search, User, X, Menu, ChevronDown, LogOut } from 'lucide-react';
+import { Plus, Wallet as WalletIcon, CreditCard, Banknote, Calendar, CheckCircle, AlertCircle, TrendingUp, TrendingDown, PieChart, MoreVertical, Filter, Search, User, X, Menu, ChevronDown, LogOut, Trash2, Edit2, Loader2, Sparkles } from 'lucide-react';
+import { parseStatementText } from '@/lib/gemini';
 import { motion, AnimatePresence } from 'motion/react';
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format, isAfter, isBefore, addDays, addMonths } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart as RePieChart, Pie } from 'recharts';
@@ -144,9 +145,9 @@ const TransactionItem = ({ transaction, onPay, onClick }: { transaction: any, on
 };
 
 export default function FinanceDashboard() {
-  const { wallets, transactions, budgets, categories, attributions, fixedAccounts, addTransaction, payTransaction, deleteTransaction, updateWallet, updateBudget, generateFixedTransactions } = useFinance();
+  const { wallets, transactions, budgets, categories, attributions, fixedAccounts, importRules, addTransaction, addTransactions, payTransaction, deleteTransaction, updateWallet, updateBudget, generateFixedTransactions, addImportRule, updateImportRule, deleteImportRule } = useFinance();
   const { signOut, user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'wallets' | 'categories' | 'budgets' | 'reports' | 'management' | 'attributions' | 'installments' | 'fixed_accounts'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'wallets' | 'categories' | 'budgets' | 'reports' | 'management' | 'attributions' | 'installments' | 'fixed_accounts' | 'import' | 'import_rules'>('overview');
   const [showAddForm, setShowAddForm] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
@@ -166,6 +167,147 @@ export default function FinanceDashboard() {
   const [showGenerateFixedModal, setShowGenerateFixedModal] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [mounted, setMounted] = React.useState(false);
+
+  // Import State
+  const [importText, setImportText] = useState('');
+  const [isProcessingImport, setIsProcessingImport] = useState(false);
+  const [parsedTransactions, setParsedTransactions] = useState<any[]>([]);
+  const [importStep, setImportStep] = useState<'input' | 'review'>('input');
+  const [importTargetWallet, setImportTargetWallet] = useState<string>(wallets.length > 0 ? wallets[0].id : '');
+  const [importTargetAttribution, setImportTargetAttribution] = useState<string>('attr-1'); // Default for new items
+
+  const calculateCardDate = (dateStr: string, walletId: string) => {
+    const wallet = wallets.find(w => w.id === walletId);
+    if (!wallet || wallet.type !== 'CREDIT_CARD' || !wallet.dueDay) return { date: dateStr, dueDate: undefined };
+
+    const transactionDate = new Date(dateStr);
+    const year = transactionDate.getFullYear();
+    const month = transactionDate.getMonth();
+    const day = transactionDate.getDate();
+
+    // Em cartões de crédito, normalmente o fechamento (closing) é uns 7-10 dias antes do vencimento
+    // Vamos assumir 10 dias como padrão de fechamento antecipado
+    const closingDay = wallet.dueDay - 10;
+    
+    let dueYear = year;
+    let dueMonth = month;
+
+    // Se o dia da transação for maior ou igual ao dia de fechamento, cai no próximo vencimento
+    if (day >= closingDay) {
+      dueMonth += 1;
+    }
+
+    // Se o dia de fechamento for negativo (ex: dueDay 5 - 10 = -5), significa que fecha no mês anterior
+    // Mas simplificando: se a transação é hoje e o vencimento é dia 10, e hoje é dia 13, já fechou pro dia 10 desse mês.
+    if (day >= (wallet.dueDay - 7)) { // Usando 7 dias como margem de segurança para fechamento
+        // already closed for this month if today is after closing
+    }
+
+    // Ajuste simples: se o dia atual >= (vencimento - 10), vai pro próximo mês.
+    // Ex: Vencimento dia 10. Hoje dia 1. Fecha hoje (mais ou menos).
+    // Se hoje é dia 5, vence dia 10 do mês ATUAL.
+    // Se hoje é dia 11, vence dia 10 do PRÓXIMO mês.
+    
+    let targetMonth = month;
+    if (day > (wallet.dueDay - 10)) {
+      targetMonth += 1;
+    }
+    
+    const dueDate = new Date(year, targetMonth, wallet.dueDay);
+    return { 
+      date: dateStr, 
+      dueDate: format(dueDate, 'yyyy-MM-dd')
+    };
+  };
+
+  const handleParseImport = async () => {
+    if (!importText.trim()) return;
+    setIsProcessingImport(true);
+    try {
+      const result = await parseStatementText(importText);
+      
+      // Apply rules
+      const itemsWithRules = result.map((item: any) => {
+        let categoryId = item.categoryId;
+        let attributionId = importTargetAttribution;
+
+        // Simple match rules
+        const rule = importRules.find(r => 
+          item.description.toUpperCase().includes(r.pattern.toUpperCase())
+        );
+
+        if (rule) {
+          if (rule.categoryId) categoryId = rule.categoryId;
+          if (rule.attributionId) attributionId = rule.attributionId;
+        }
+
+        // Apply Card Date Logic
+        const { date, dueDate } = calculateCardDate(item.date, importTargetWallet);
+
+        return {
+          ...item,
+          date,
+          dueDate,
+          categoryId,
+          attributionId
+        };
+      });
+
+      setParsedTransactions(itemsWithRules);
+      setImportStep('review');
+    } catch (error) {
+      console.error('Error parsing statement:', error);
+      alert('Ocorreu um erro ao processar o extrato. Verifique sua chave de API ou tente novamente.');
+    } finally {
+      setIsProcessingImport(false);
+    }
+  };
+
+  // Recalcular datas quando mudar a carteira de destino
+  useEffect(() => {
+    if (parsedTransactions.length > 0) {
+      setParsedTransactions(prev => prev.map(item => {
+        const { date, dueDate } = calculateCardDate(item.date, importTargetWallet);
+        return { ...item, date, dueDate };
+      }));
+    }
+  }, [importTargetWallet]);
+
+  const handleConfirmImport = async () => {
+    try {
+      const transactionsToAdd = parsedTransactions.map(t => ({
+        description: t.description,
+        amount: t.amount,
+        date: t.date,
+        dueDate: t.dueDate,
+        nature: (t.nature as TransactionNature) || 'EXPENSE',
+        walletId: importTargetWallet,
+        attributionId: t.attributionId || importTargetAttribution,
+        categoryId: t.categoryId || (categories.length > 0 ? categories[0].id : ''),
+        type: 'SINGLE' as TransactionType,
+        isPaid: t.dueDate ? false : true // Se tem dueDate (cartão), não está pago ainda na conta corrente
+      }));
+
+      await addTransactions(transactionsToAdd);
+      
+      setParsedTransactions([]);
+      setImportText('');
+      setImportStep('input');
+      setActiveTab('transactions');
+      alert('Transações importadas com sucesso!');
+    } catch (error) {
+      console.error('Error importing transactions:', error);
+      alert('Erro ao importar transações.');
+    }
+  };
+
+  const removeParsedItem = (index: number) => {
+    setParsedTransactions(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateParsedItem = (index: number, updates: any) => {
+    setParsedTransactions(prev => prev.map((item, i) => i === index ? { ...item, ...updates } : item));
+  };
 
   // Set mounted on client
   React.useEffect(() => {
@@ -312,6 +454,8 @@ export default function FinanceDashboard() {
     { id: 'installments', label: 'Parcelamentos', icon: <Banknote size={20} /> },
     { id: 'attributions', label: 'Atribuições', icon: <User size={20} /> },
     { id: 'fixed_accounts', label: 'Contas Fixas', icon: <Calendar size={20} /> },
+    { id: 'import', label: 'Importar Extrato', icon: <Plus size={20} /> },
+    { id: 'import_rules', label: 'Regras de IA', icon: <Sparkles size={20} /> },
     { id: 'reports', label: 'Relatórios', icon: <TrendingUp size={20} /> },
   ];
 
@@ -1768,6 +1912,275 @@ export default function FinanceDashboard() {
                     <TrendingUp size={48} className="mx-auto mb-4 text-slate-300" />
                     <p className="text-slate-500">Módulo de inteligência de relatórios em desenvolvimento.</p>
                   </Card>
+                </div>
+              )}
+
+              {activeTab === 'import' && (
+                <div className="space-y-6">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <h2 className="text-2xl font-bold tracking-tight">Importar Extrato</h2>
+                    {importStep === 'review' && (
+                      <button 
+                        onClick={() => setImportStep('input')}
+                        className="text-xs font-bold text-blue-500 hover:text-blue-400 uppercase tracking-widest flex items-center gap-1"
+                      >
+                        <X size={14} /> Cancelar e Voltar
+                      </button>
+                    )}
+                  </div>
+
+                  {importStep === 'input' ? (
+                    <Card className="p-8 space-y-6">
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-slate-300">Cole aqui as informações do seu extrato</label>
+                        <p className="text-xs text-slate-500">
+                          Copie as linhas do seu extrato bancário ou fatura do cartão e cole abaixo. 
+                          Nossa IA identificará datas, descrições e valores automaticamente.
+                        </p>
+                      </div>
+                      
+                      <textarea
+                        value={importText}
+                        onChange={(e) => setImportText(e.target.value)}
+                        placeholder="Ex: 10/05 SUPER ALFA CHAPECO 108,11"
+                        className="w-full h-64 bg-slate-900 border border-slate-700 rounded-2xl p-6 text-slate-100 font-mono text-sm focus:ring-2 focus:ring-blue-600 outline-none resize-none shadow-inner"
+                      />
+
+                      <div className="flex justify-end">
+                        <button
+                          onClick={handleParseImport}
+                          disabled={isProcessingImport || !importText.trim()}
+                          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold px-8 py-4 rounded-2xl transition-all shadow-lg shadow-blue-900/20 flex items-center gap-2 active:scale-95"
+                        >
+                          {isProcessingImport ? (
+                            <>
+                              <Loader2 size={20} className="animate-spin" />
+                              Processando com IA...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles size={20} />
+                              Analisar Lançamentos
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="bg-blue-600/5 border border-blue-600/10 rounded-2xl p-6">
+                        <h4 className="text-xs font-bold text-blue-400 uppercase mb-3 flex items-center gap-2">
+                          <AlertCircle size={14} /> Dica de Formato
+                        </h4>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          O sistema funciona melhor com formatos simples como:<br/>
+                          <code className="bg-slate-900 px-2 py-0.5 rounded text-blue-300 mt-1 inline-block">10/05 SUPERMERCADO 50,00</code><br/>
+                          <code className="bg-slate-900 px-2 py-0.5 rounded text-blue-300 mt-1 inline-block">09/05 PAGAMENTO RECEBIDO 1500,00</code>
+                        </p>
+                      </div>
+                    </Card>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Card className="p-6">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Carteira de Destino</label>
+                          <select 
+                            value={importTargetWallet}
+                            onChange={(e) => setImportTargetWallet(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 font-bold outline-none"
+                          >
+                            {wallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                          </select>
+                        </Card>
+                        <Card className="p-6">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Atribuição Global</label>
+                          <select 
+                            value={importTargetAttribution}
+                            onChange={(e) => setImportTargetAttribution(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 font-bold outline-none"
+                          >
+                            {attributions.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                          </select>
+                        </Card>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between px-2">
+                          <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                            {parsedTransactions.length} Transações Identificadas
+                          </span>
+                        </div>
+                        
+                        {parsedTransactions.map((t, idx) => (
+                          <Card key={idx} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 group">
+                            <div className="flex items-center gap-4 flex-1">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                                t.nature === 'INCOME' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
+                              }`}>
+                                {t.nature === 'INCOME' ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <input 
+                                    value={t.description}
+                                    onChange={(e) => updateParsedItem(idx, { description: e.target.value })}
+                                    className="bg-transparent border-none p-0 font-bold text-slate-100 focus:ring-0 w-full"
+                                  />
+                                </div>
+                                <div className="flex items-center gap-3 mt-1">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-xs font-bold text-slate-500">{formatDate(t.date)}</span>
+                                    {t.dueDate && t.dueDate !== t.date && (
+                                      <div className="flex items-center gap-1 text-[10px] bg-blue-500/10 text-blue-400 px-1.5 py-0.5 rounded font-black uppercase ring-1 ring-blue-500/20">
+                                        <Calendar size={10} />
+                                        Venc: {formatDate(t.dueDate)}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400 font-bold uppercase ring-1 ring-slate-700">
+                                    {t.nature === 'INCOME' ? 'Receita' : 'Despesa'}
+                                  </span>
+                                  <select 
+                                    value={t.categoryId || ''}
+                                    onChange={(e) => updateParsedItem(idx, { categoryId: e.target.value })}
+                                    className="bg-transparent border-none p-0 text-[10px] font-bold text-blue-400 focus:ring-0 uppercase cursor-pointer"
+                                  >
+                                    <option value="">Sem Categoria</option>
+                                    {categories
+                                      .filter(c => !c.type || c.type === 'BOTH' || c.type === t.nature)
+                                      .map(c => <option key={c.id} value={c.id}>{c.name}</option>)
+                                    }
+                                  </select>
+                                  <select 
+                                    value={t.attributionId || ''}
+                                    onChange={(e) => updateParsedItem(idx, { attributionId: e.target.value })}
+                                    className="bg-transparent border-none p-0 text-[10px] font-bold text-emerald-400 focus:ring-0 uppercase cursor-pointer"
+                                  >
+                                    {attributions.map(a => (
+                                      <option key={a.id} value={a.id}>{a.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                              <div className="text-right">
+                                <div className="relative">
+                                  <span className="absolute left-0 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-bold">R$</span>
+                                  <input 
+                                    type="number"
+                                    step="0.01"
+                                    value={t.amount}
+                                    onChange={(e) => updateParsedItem(idx, { amount: parseFloat(e.target.value) })}
+                                    className="bg-transparent border-none p-0 pl-4 font-black text-lg text-slate-100 text-right focus:ring-0 w-32"
+                                  />
+                                </div>
+                              </div>
+                              <button 
+                                onClick={() => removeParsedItem(idx)}
+                                className="p-2 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+
+                      <div className="sticky bottom-6 flex gap-4">
+                         <button
+                          onClick={() => setImportStep('input')}
+                          className="flex-1 bg-slate-800 text-slate-300 font-bold py-4 rounded-2xl border border-slate-700 hover:bg-slate-700 transition-all"
+                        >
+                          Descartar e Voltar
+                        </button>
+                        <button
+                          onClick={handleConfirmImport}
+                          className="flex-[2] bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+                        >
+                          <CheckCircle size={20} />
+                          Confirmar Importação de {parsedTransactions.length} Itens
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'import_rules' && (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <h2 className="text-2xl font-bold tracking-tight">Regras de IA</h2>
+                      <p className="text-sm text-slate-500">Defina categorias automáticas baseadas no texto do extrato</p>
+                    </div>
+                    <button 
+                      onClick={() => addImportRule({ pattern: '', categoryId: categories[0]?.id })}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold p-2 rounded-xl transition-all shadow-lg active:scale-95"
+                    >
+                      <Plus size={20} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4">
+                    {importRules.length === 0 && (
+                      <Card className="p-12 flex flex-col items-center justify-center text-center space-y-4">
+                        <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center">
+                          <Sparkles size={32} className="text-slate-600" />
+                        </div>
+                        <div className="space-y-1">
+                          <h3 className="font-bold text-slate-300">Nenhuma regra criada</h3>
+                          <p className="text-sm text-slate-500 max-w-xs">Adicione regras para que o sistema reconheça automaticamente suas transações.</p>
+                        </div>
+                      </Card>
+                    )}
+                    {importRules.map(rule => (
+                      <Card key={rule.id} className="p-6 flex flex-col md:flex-row items-start md:items-center gap-4">
+                        <div className="flex-1 w-full space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Se o texto contiver</label>
+                          <input 
+                            value={rule.pattern}
+                            onChange={(e) => updateImportRule(rule.id, { pattern: e.target.value })}
+                            placeholder="Ex: SUPER ALFA"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-slate-100 font-bold outline-none focus:ring-2 focus:ring-blue-600 transition-all"
+                          />
+                        </div>
+                        <div className="flex-1 w-full space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Atribuir Categoria</label>
+                          <select 
+                            value={rule.categoryId || ''}
+                            onChange={(e) => updateImportRule(rule.id, { categoryId: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-slate-100 font-bold outline-none focus:ring-2 focus:ring-blue-600 transition-all"
+                          >
+                            <option value="">Nenhuma</option>
+                            {categories.sort((a,b) => a.name.localeCompare(b.name)).map(c => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex-1 w-full space-y-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase">Atribuir Pessoa/Local</label>
+                          <select 
+                            value={rule.attributionId || ''}
+                            onChange={(e) => updateImportRule(rule.id, { attributionId: e.target.value })}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-slate-100 font-bold outline-none focus:ring-2 focus:ring-blue-600 transition-all"
+                          >
+                            <option value="">Nenhuma</option>
+                            {attributions.map(a => (
+                              <option key={a.id} value={a.id}>{a.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex shrink-0 self-end md:self-center">
+                          <button 
+                            onClick={() => deleteImportRule(rule.id)}
+                            className="p-3 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all"
+                          >
+                            <Trash2 size={20} />
+                          </button>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
                 </div>
               )}
             </motion.div>

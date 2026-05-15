@@ -72,6 +72,13 @@ export interface FixedAccount {
   attributionId?: string;
 }
 
+export interface ImportRule {
+  id: string;
+  pattern: string;
+  categoryId?: string;
+  attributionId?: string;
+}
+
 export const INITIAL_CATEGORIES: Category[] = [
   { id: 'cat-1', name: 'Mercado', color: '#ef4444', type: 'EXPENSE' },
   { id: 'cat-2', name: 'Energia', color: '#eab308', type: 'EXPENSE' },
